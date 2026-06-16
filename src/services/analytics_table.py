@@ -10,7 +10,8 @@ from src.db.models import Client
 from src.vat import cost_with_vat
 from src.yandex_direct import (
     YandexDirectClient,
-    _conversion_field,
+    _merge_conversion_columns,
+    conversions_for_goal,
     _parse_float,
     _parse_int,
 )
@@ -118,11 +119,7 @@ def _fetch_all_report_rows(api, date_from, date_to, goal_ids, attribution_model)
                 merged[key] = dict(row)
             else:
                 target = merged[key]
-                for gid in chunk:
-                    conv_key = _conversion_field(gid, attribution_model)
-                    if conv_key in row:
-                        cur = _parse_float(target.get(conv_key, "0"))
-                        target[conv_key] = str(cur + _parse_float(row.get(conv_key, "0")))
+                _merge_conversion_columns(target, row, list(chunk))
     return list(merged.values())
 
 
@@ -135,8 +132,7 @@ def _aggregate_rows(rows, goal_ids, attribution_model, vat_rate):
         cost_raw += _parse_float(row.get("Cost", "0"))
         impressions += _parse_int(row.get("Impressions", "0"))
         for gid in goal_ids:
-            key = _conversion_field(gid, attribution_model)
-            conversions[gid] += _parse_float(row.get(key, "0"))
+            conversions[gid] += conversions_for_goal(row, gid, attribution_model)
 
     spend = cost_with_vat(cost_raw, vat_rate)
     return spend, impressions, conversions

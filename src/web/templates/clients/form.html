@@ -25,8 +25,17 @@
   </label>
   <label>Модель атрибуции
     <select name="attribution_model">
-      {% for model in ['LSC', 'LC', 'FC', 'LYDC'] %}
-      <option value="{{ model }}" {% if client and client.attribution_model == model %}selected{% elif not client and model == 'LSC' %}selected{% endif %}>{{ model }}</option>
+      {% for model, label in [
+        ('AUTO', 'AUTO — автоматическая (как в интерфейсе Директа)'),
+        ('LSC', 'LSC — последний значимый переход'),
+        ('LYDC', 'LYDC — последний переход из Директа'),
+        ('LC', 'LC — последний переход'),
+        ('FC', 'FC — первый переход'),
+        ('FCCD', 'FCCD — первый переход (кросс-девайс)'),
+        ('LSCCD', 'LSCCD — последний значимый (кросс-девайс)'),
+        ('LYDCCD', 'LYDCCD — последний из Директа (кросс-девайс)'),
+      ] %}
+      <option value="{{ model }}" {% if client and client.attribution_model == model %}selected{% elif not client and model == 'AUTO' %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
   </label>

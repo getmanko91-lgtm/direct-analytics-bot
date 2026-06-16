@@ -39,9 +39,52 @@ BASE_REPORT_FIELDS = [
 
 MAX_GOALS_PER_REQUEST = 10
 
+# Модели атрибуции для отчёта: основная + запасные (в UI Директа часто «Автоматическая» = AUTO).
+REPORT_ATTRIBUTION_FALLBACK = ("AUTO", "LYDC", "LSC", "LC", "FC", "FCCD", "LSCCD", "LYDCCD")
+
 
 def _conversion_field(goal_id: int, attribution_model: str) -> str:
     return f"Conversions_{goal_id}_{attribution_model}"
+
+
+def _attribution_models_for_report(primary: str) -> list[str]:
+    order = [primary, *REPORT_ATTRIBUTION_FALLBACK]
+    seen: set[str] = set()
+    result: list[str] = []
+    for model in order:
+        if model and model not in seen:
+            seen.add(model)
+            result.append(model)
+    return result
+
+
+def conversions_for_goal(row: dict[str, str], goal_id: int, attribution_model: str) -> float:
+    """Конверсии по цели с учётом выбранной модели и запасных колонок в TSV."""
+    for model in _attribution_models_for_report(attribution_model):
+        value = _parse_float(row.get(_conversion_field(goal_id, model), "0"))
+        if value > 0:
+            return value
+    prefix = f"Conversions_{goal_id}_"
+    for key, raw in row.items():
+        if key.startswith(prefix):
+            value = _parse_float(raw)
+            if value > 0:
+                return value
+    return 0.0
+
+
+def _merge_conversion_columns(
+    target: dict[str, str],
+    source: dict[str, str],
+    goal_ids: list[int],
+) -> None:
+    for goal_id in goal_ids:
+        prefix = f"Conversions_{goal_id}_"
+        for key, raw in source.items():
+            if not key.startswith(prefix):
+                continue
+            current = _parse_float(target.get(key, "0"))
+            target[key] = str(current + _parse_float(raw))
 
 
 def _cpa_field(goal_id: int, attribution_model: str) -> str:
@@ -234,7 +277,7 @@ class YandexDirectClient:
         }
         if goal_ids:
             params["Goals"] = [str(g) for g in goal_ids]
-            params["AttributionModels"] = [attribution_model]
+            params["AttributionModels"] = _attribution_models_for_report(attribution_model)
 
         body = {"params": params}
         headers = self._build_report_headers()
@@ -327,6 +370,7 @@ class YandexDirectClient:
 
     def _build_report_headers(self) -> dict[str, str]:
         headers = self._build_api_headers()
+        headers["Accept-Language"] = "en"
         headers.update(
             {
                 "skipReportHeader": "true",
@@ -366,11 +410,7 @@ class YandexDirectClient:
                 merged[key] = dict(row)
                 continue
             target = merged[key]
-            for goal_id in goal_ids:
-                conv_key = _conversion_field(goal_id, attribution_model)
-                if conv_key in row:
-                    current = _parse_float(target.get(conv_key, "0"))
-                    target[conv_key] = str(current + _parse_float(row.get(conv_key, "0")))
+            _merge_conversion_columns(target, row, goal_ids)
 
     def _group_rows_by_date(
         self,
@@ -406,7 +446,7 @@ def _row_to_campaign(
 
     if goal_ids:
         conversions = sum(
-            _parse_float(row.get(_conversion_field(gid, attribution_model), "0"))
+            conversions_for_goal(row, gid, attribution_model)
             for gid in goal_ids
         )
     else:
