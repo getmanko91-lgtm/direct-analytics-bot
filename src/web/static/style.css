@@ -387,6 +387,78 @@ code {
   font-weight: 600;
 }
 
+.analytics-table td.cpa-low {
+  background: rgba(61, 214, 140, 0.15);
+  color: #8ef0c0;
+  font-weight: 600;
+}
+
+.budget-pacing-card {
+  margin-bottom: 1.5rem;
+}
+
+.budget-pacing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.budget-pacing-header .chart-title {
+  margin: 0;
+}
+
+.budget-pacing-grid {
+  margin-bottom: 0.75rem;
+}
+
+.budget-pacing-hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.pace-badge {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pace-badge.pace-ok {
+  background: rgba(61, 214, 140, 0.18);
+  color: #8ef0c0;
+}
+
+.pace-badge.pace-over {
+  background: rgba(252, 63, 29, 0.18);
+  color: #ffb3a6;
+}
+
+.pace-badge.pace-under {
+  background: rgba(110, 182, 255, 0.18);
+  color: #9ecaff;
+}
+
+.pace-badge.pace-none {
+  background: rgba(139, 152, 168, 0.18);
+  color: var(--muted);
+}
+
+.pace-deviation.pace-ok {
+  color: #8ef0c0;
+}
+
+.pace-deviation.pace-over {
+  color: #ffb3a6;
+}
+
+.pace-deviation.pace-under {
+  color: #9ecaff;
+}
+
 .client-link {
   color: var(--text);
   text-decoration: none;

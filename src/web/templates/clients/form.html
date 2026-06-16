@@ -23,7 +23,7 @@
   <label>Месячный бюджет, ₽
     <input type="number" step="0.01" min="0" name="monthly_budget" value="{{ client.monthly_budget if client else '' }}" placeholder="0">
   </label>
-  <p class="muted form-hint">Недельный бюджет считается автоматически: месячный ÷ 4</p>
+  <p class="muted form-hint">Дневной = месячный ÷ 30, недельный = месячный ÷ 4</p>
   <label>Порог расхода для алерта, ₽
     <input type="number" step="0.01" name="spend_alert_threshold" value="{{ client.spend_alert_threshold if client else 0 }}">
   </label>

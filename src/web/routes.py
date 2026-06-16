@@ -14,7 +14,8 @@ from src.db.models import Client, User
 from src.services.analytics_table import fetch_analytics_table, format_analytics_telegram
 from src.services.client_balances import fetch_client_balances, format_balance
 from src.services.client_campaigns import fetch_client_campaign_report
-from src.services.cpa_style import cpa_highlight_class
+from src.services.budget_pacing import build_budget_pacing
+from src.services.cpa_style import cpa_chart_color, cpa_highlight_class
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
 from src.telegram_notifier import TelegramError, TelegramNotifier
@@ -234,8 +235,11 @@ def client_analytics_page(
             return str(int(value))
         return f"{value:.2f}".replace(".", ",")
 
-    by_conversions = sorted(report.campaigns, key=lambda c: c.conversions, reverse=True)
-    chart_rows = [c for c in by_conversions if c.conversions > 0]
+    by_cpa = sorted(
+        [c for c in report.campaigns if c.cpa is not None and c.conversions > 0],
+        key=lambda c: c.cpa,
+        reverse=True,
+    )
 
     display_campaigns = [
         {
@@ -252,6 +256,21 @@ def client_analytics_page(
     ]
 
     month_budget = float(report.client.monthly_budget or 0)
+    pacing = build_budget_pacing(month_budget, report.total_spend, date_from, date_to)
+
+    def _fmt_deviation(value: float | None) -> str:
+        if value is None:
+            return "—"
+        sign = "+" if value > 0 else ""
+        return f"{sign}{value:.1f}".replace(".", ",") + "%"
+
+    pacing_status_labels = {
+        "ok": "В норме (±10%)",
+        "over": "Перерасход",
+        "under": "Недорасход",
+        "none": "Бюджет не задан",
+    }
+
     return templates.TemplateResponse(
         request,
         "clients/analytics.html",
@@ -266,10 +285,17 @@ def client_analytics_page(
             "total_conversions": _fmt_conv(report.total_conversions) if not report.error else "—",
             "monthly_budget": _fmt_money(month_budget) if month_budget > 0 else "—",
             "weekly_budget": _fmt_money(report.weekly_budget) if report.weekly_budget > 0 else "—",
+            "daily_budget": _fmt_money(pacing.daily_budget) if pacing.has_budget else "—",
+            "period_days": pacing.period_days,
+            "expected_spend": _fmt_money(pacing.expected_spend) if pacing.has_budget else "—",
+            "deviation_percent": _fmt_deviation(pacing.deviation_percent),
+            "pacing_status": pacing.status,
+            "pacing_status_label": pacing_status_labels[pacing.status],
             "campaigns": display_campaigns,
-            "chart_labels": [c.campaign_name for c in chart_rows],
-            "chart_values": [c.conversions for c in chart_rows],
-            "chart_height": min(420, max(220, len(chart_rows) * 42)),
+            "chart_labels": [c.campaign_name for c in by_cpa],
+            "chart_values": [round(c.cpa, 2) for c in by_cpa if c.cpa is not None],
+            "chart_colors": [cpa_chart_color(c.cpa) for c in by_cpa],
+            "chart_height": min(420, max(220, len(by_cpa) * 42)),
             "vat_percent": int(settings.vat_rate * 100),
             "preset_yesterday": f"date_from={yesterday.isoformat()}&date_to={yesterday.isoformat()}",
             "preset_7days": f"date_from={(today - timedelta(days=7)).isoformat()}&date_to={yesterday.isoformat()}",
