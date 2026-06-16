@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/balance.html" import balance_badge %}
 {% block title %}Сводка{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -51,7 +52,12 @@
     <tbody>
       {% for row in rows %}
       <tr class="{% if row.error %}row-error{% endif %}">
-        <td><strong>{{ row.client_name }}</strong></td>
+        <td>
+          <strong>{{ row.client_name }}</strong>
+          {% if row.show_balance %}
+          <div>{{ balance_badge(row.balance_amount, row.balance_low, row.balance_error) }}</div>
+          {% endif %}
+        </td>
         <td>{{ row.spend }}</td>
         <td>{{ row.impressions }}</td>
         <td>{{ row.goal_name }}</td>

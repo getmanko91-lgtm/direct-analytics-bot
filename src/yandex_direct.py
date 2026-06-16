@@ -222,6 +222,35 @@ class YandexDirectClient:
                     seen[goal_id] = GoalInfo(goal_id=goal_id, name=str(item.get("Name", f"Цель {goal_id}")))
         return list(seen.values())
 
+    def fetch_account_balances(self, logins: list[str]) -> dict[str, float]:
+        """Баланс общего счёта клиентов (Live v4 AccountManagement, Action=Get)."""
+        unique = list(dict.fromkeys(login.strip() for login in logins if login and login.strip()))
+        if not unique:
+            return {}
+
+        body = {
+            "method": "AccountManagement",
+            "param": {
+                "Action": "Get",
+                "SelectionCriteria": {
+                    "Logins": unique,
+                    "AccountIDS": [],
+                },
+            },
+        }
+        response = self._post_live_v4(body, use_client_login=False)
+        data = response.get("data")
+        if not isinstance(data, dict):
+            return {}
+
+        balances: dict[str, float] = {}
+        for account in data.get("Accounts") or []:
+            login = account.get("Login")
+            amount = account.get("Amount")
+            if login and amount is not None:
+                balances[str(login)] = float(amount)
+        return balances
+
     def fetch_goals_from_metrika(self, counter_id: int) -> list[GoalInfo]:
         headers = {
             "Authorization": f"OAuth {self._metrika_token}",
@@ -326,10 +355,10 @@ class YandexDirectClient:
             raise YandexDirectError(f"Ошибка API: {payload['error']}")
         return payload
 
-    def _post_live_v4(self, body: dict) -> dict:
+    def _post_live_v4(self, body: dict, *, use_client_login: bool = True) -> dict:
         last_error: YandexDirectError | None = None
         for auth_value in (f"Bearer {self._token}", f"OAuth {self._token}"):
-            headers = self._build_api_headers()
+            headers = self._build_api_headers(use_client_login=use_client_login)
             headers["Authorization"] = auth_value
             try:
                 response = requests.post(LIVE_V4_URL, json=body, headers=headers, timeout=60)
@@ -350,13 +379,13 @@ class YandexDirectClient:
             raise last_error
         raise YandexDirectError("Live API error: не удалось авторизоваться")
 
-    def _build_api_headers(self) -> dict[str, str]:
+    def _build_api_headers(self, *, use_client_login: bool = True) -> dict[str, str]:
         headers = {
             "Authorization": f"Bearer {self._token}",
             "Accept-Language": "ru",
             "Content-Type": "application/json; charset=utf-8",
         }
-        if self._client_login:
+        if use_client_login and self._client_login:
             login = self._client_login.strip()
             try:
                 login.encode("latin-1")

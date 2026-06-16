@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.config import Settings
 from src.db.models import Client
+from src.services.client_balances import ClientBalance, fetch_client_balances
 from src.vat import cost_with_vat
 from src.yandex_direct import (
     YandexDirectClient,
@@ -27,6 +28,8 @@ class AnalyticsRow:
     goal_id: int
     conversions: float
     cpa: float | None
+    balance: ClientBalance | None = None
+    show_balance: bool = False
     error: str | None = None
 
 
@@ -42,8 +45,15 @@ def fetch_analytics_table(
         query = query.filter(Client.is_active.is_(True))
     clients = query.all()
 
+    balances = fetch_client_balances(
+        settings.yandex_token,
+        [client.yandex_login for client in clients],
+    )
+    balance_shown: set[int] = set()
+
     rows: list[AnalyticsRow] = []
     for client in clients:
+        balance = balances.get(client.yandex_login)
         selected_goals = [g for g in client.goals if g.is_selected]
         if not selected_goals:
             rows.append(
@@ -56,9 +66,12 @@ def fetch_analytics_table(
                     goal_id=0,
                     conversions=0,
                     cpa=None,
+                    balance=balance,
+                    show_balance=client.id not in balance_shown,
                     error="Не выбраны цели",
                 )
             )
+            balance_shown.add(client.id)
             continue
 
         goal_ids = [g.goal_id for g in selected_goals]
@@ -85,8 +98,11 @@ def fetch_analytics_table(
                         goal_id=goal.goal_id,
                         conversions=conv,
                         cpa=cpa,
+                        balance=balance,
+                        show_balance=client.id not in balance_shown,
                     )
                 )
+                balance_shown.add(client.id)
         except Exception as exc:
             rows.append(
                 AnalyticsRow(
@@ -98,9 +114,12 @@ def fetch_analytics_table(
                     goal_id=0,
                     conversions=0,
                     cpa=None,
+                    balance=balance,
+                    show_balance=client.id not in balance_shown,
                     error=str(exc)[:300],
                 )
             )
+            balance_shown.add(client.id)
     return rows
 
 

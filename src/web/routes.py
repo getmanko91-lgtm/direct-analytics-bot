@@ -12,6 +12,7 @@ from src.config import Settings
 from src.db.database import get_db
 from src.db.models import Client, User
 from src.services.analytics_table import fetch_analytics_table, format_analytics_telegram
+from src.services.client_balances import fetch_client_balances, format_balance
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
 from src.telegram_notifier import TelegramError, TelegramNotifier
@@ -112,6 +113,10 @@ def analytics_page(
             else "—",
             "cpa": _fmt_money(r.cpa) if r.cpa is not None else ("—" if not r.error else r.error),
             "error": r.error,
+            "show_balance": r.show_balance,
+            "balance_amount": format_balance(r.balance.amount) if r.balance and r.balance.amount is not None else None,
+            "balance_low": bool(r.balance and r.balance.is_low),
+            "balance_error": r.balance.error if r.balance else None,
         }
         for r in rows
     ]
@@ -169,6 +174,7 @@ def clients_list(
     request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
 ):
     clients = (
         db.query(Client)
@@ -176,12 +182,24 @@ def clients_list(
         .order_by(Client.name)
         .all()
     )
+    balances = fetch_client_balances(settings.yandex_token, [c.yandex_login for c in clients])
+    client_rows = []
+    for client in clients:
+        balance = balances.get(client.yandex_login)
+        client_rows.append(
+            {
+                "client": client,
+                "balance_amount": format_balance(balance.amount) if balance and balance.amount is not None else None,
+                "balance_low": bool(balance and balance.is_low),
+                "balance_error": balance.error if balance else None,
+            }
+        )
     return templates.TemplateResponse(
         request,
         "clients/list.html",
         {
             "user": user,
-            "clients": clients,
+            "client_rows": client_rows,
             "message": request.query_params.get("message"),
         },
     )

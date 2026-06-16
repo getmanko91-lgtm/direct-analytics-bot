@@ -338,6 +338,33 @@ code {
   color: #ff9988 !important;
 }
 
+.balance-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.balance-low {
+  color: #ff7a66;
+  font-weight: 600;
+}
+
+.balance-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fc3f1d;
+  flex-shrink: 0;
+}
+
+.balance-error {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 @media (max-width: 640px) {
   .container { padding: 1rem; }
   .nav { padding: 0.75rem 1rem; flex-direction: column; gap: 0.75rem; }

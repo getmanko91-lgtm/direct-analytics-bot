@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/balance.html" import balance_badge %}
 {% block title %}Клиенты{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -10,11 +11,12 @@
 <div class="alert alert-success">{{ message }}</div>
 {% endif %}
 
-{% if clients %}
+{% if client_rows %}
 <table class="table">
   <thead>
     <tr>
       <th>Название</th>
+      <th>Баланс</th>
       <th>Логин</th>
       <th>Метрика</th>
       <th>Цели выбраны</th>
@@ -23,9 +25,11 @@
     </tr>
   </thead>
   <tbody>
-    {% for client in clients %}
+    {% for row in client_rows %}
+    {% set client = row.client %}
     <tr>
       <td><strong>{{ client.name }}</strong></td>
+      <td>{{ balance_badge(row.balance_amount, row.balance_low, row.balance_error) or '—' }}</td>
       <td><code>{{ client.yandex_login }}</code></td>
       <td>{{ client.metrika_counter_id or '—' }}</td>
       <td>{{ client.goals|selectattr('is_selected')|list|length }}</td>

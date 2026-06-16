@@ -1,0 +1,14 @@
+{% macro balance_badge(amount, low, error) %}
+{% if amount %}
+  {% if low %}
+  <span class="balance-indicator balance-low" title="Баланс ниже 10 000 ₽">
+    <span class="balance-dot" aria-hidden="true"></span>
+    {{ amount }} ₽
+  </span>
+  {% else %}
+  <span class="balance-indicator">{{ amount }} ₽</span>
+  {% endif %}
+{% elif error %}
+  <span class="balance-indicator balance-error" title="{{ error }}">баланс ?</span>
+{% endif %}
+{% endmacro %}
