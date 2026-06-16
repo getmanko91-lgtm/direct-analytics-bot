@@ -265,8 +265,10 @@ class YandexDirectClient:
                 "CpmBannerCampaign",
             ):
                 block = campaign.get(block_name) or {}
-                for counter_id in block.get("CounterIds") or []:
-                    counter_ids.add(int(counter_id))
+                for counter_id in _expand_api_items(block.get("CounterIds")):
+                    parsed = _parse_api_int(counter_id)
+                    if parsed is not None:
+                        counter_ids.add(parsed)
         return sorted(counter_ids)
 
     def fetch_goals_from_campaign_settings(self) -> list[GoalInfo]:
@@ -561,6 +563,33 @@ class YandexDirectClient:
         }
 
 
+def _parse_api_int(value) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if cleaned.isdigit():
+            return int(cleaned)
+    return None
+
+
+def _expand_api_items(value) -> list:
+    """API v5 часто возвращает массивы как {\"Items\": [...]}."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        items = value.get("Items")
+        if isinstance(items, list):
+            return items
+    return []
+
+
 def _parse_date(value: str) -> date:
     return date.fromisoformat(value.strip())
 
@@ -570,11 +599,8 @@ def _collect_goal_ids_from_object(obj, found: dict[int, str]) -> None:
         for key in ("GoalId", "GoalID"):
             if key not in obj:
                 continue
-            try:
-                goal_id = int(obj[key])
-            except (TypeError, ValueError):
-                continue
-            if goal_id > 0 and goal_id != 12:
+            goal_id = _parse_api_int(obj[key])
+            if goal_id is not None and goal_id > 0 and goal_id != 12:
                 found.setdefault(goal_id, f"Цель {goal_id}")
         for value in obj.values():
             _collect_goal_ids_from_object(value, found)
