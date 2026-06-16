@@ -284,18 +284,28 @@ class YandexDirectClient:
         return payload
 
     def _post_live_v4(self, body: dict) -> dict:
-        headers = self._build_api_headers()
-        try:
-            response = requests.post(LIVE_V4_URL, json=body, headers=headers, timeout=60)
-        except RequestsConnectionError as exc:
-            raise YandexDirectError("Не удалось подключиться к Live API v4") from exc
+        last_error: YandexDirectError | None = None
+        for auth_value in (f"Bearer {self._token}", f"OAuth {self._token}"):
+            headers = self._build_api_headers()
+            headers["Authorization"] = auth_value
+            try:
+                response = requests.post(LIVE_V4_URL, json=body, headers=headers, timeout=60)
+            except RequestsConnectionError as exc:
+                raise YandexDirectError("Не удалось подключиться к Live API v4") from exc
 
-        if response.status_code != 200:
-            self._raise_api_error(response)
-        payload = response.json()
-        if payload.get("error_code"):
-            raise YandexDirectError(f"Live API error: {payload}")
-        return payload
+            if response.status_code != 200:
+                self._raise_api_error(response)
+            payload = response.json()
+            error_code = payload.get("error_code")
+            if error_code:
+                last_error = YandexDirectError(f"Live API error: {payload}")
+                if error_code == 53 and auth_value.startswith("Bearer"):
+                    continue
+                raise last_error
+            return payload
+        if last_error:
+            raise last_error
+        raise YandexDirectError("Live API error: не удалось авторизоваться")
 
     def _build_api_headers(self) -> dict[str, str]:
         headers = {
