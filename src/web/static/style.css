@@ -365,6 +365,28 @@ code {
   font-size: 0.8rem;
 }
 
+.budget-weekly {
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
+}
+
+.form-hint {
+  margin: -0.5rem 0 1rem;
+  font-size: 0.85rem;
+}
+
+.analytics-table td.cpa-high {
+  background: rgba(252, 63, 29, 0.22);
+  color: #ffb3a6;
+  font-weight: 600;
+}
+
+.analytics-table td.cpa-medium {
+  background: rgba(255, 193, 7, 0.18);
+  color: #ffd966;
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .container { padding: 1rem; }
   .nav { padding: 0.75rem 1rem; flex-direction: column; gap: 0.75rem; }

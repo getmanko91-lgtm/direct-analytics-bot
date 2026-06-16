@@ -13,6 +13,7 @@ from src.db.database import get_db
 from src.db.models import Client, User
 from src.services.analytics_table import fetch_analytics_table, format_analytics_telegram
 from src.services.client_balances import fetch_client_balances, format_balance
+from src.services.cpa_style import cpa_highlight_class
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
 from src.telegram_notifier import TelegramError, TelegramNotifier
@@ -101,8 +102,12 @@ def analytics_page(
     display_rows = [
         {
             "client_name": r.client_name,
+            "monthly_budget": _fmt_money(r.monthly_budget) if r.monthly_budget > 0 else "—",
+            "weekly_budget": _fmt_money(r.weekly_budget) if r.weekly_budget > 0 else "—",
             "spend": _fmt_money(r.spend) if not r.error else "—",
             "impressions": _fmt_int(r.impressions) if not r.error else "—",
+            "clicks": _fmt_int(r.clicks) if not r.error else "—",
+            "cpc": _fmt_money(r.cpc) if r.cpc is not None else ("—" if not r.error else "—"),
             "goal_name": r.goal_name,
             "conversions": (
                 str(int(r.conversions))
@@ -112,8 +117,9 @@ def analytics_page(
             if not r.error
             else "—",
             "cpa": _fmt_money(r.cpa) if r.cpa is not None else ("—" if not r.error else r.error),
+            "cpa_class": cpa_highlight_class(r.cpa) if not r.error else "",
             "error": r.error,
-            "show_balance": r.show_balance,
+            "show_client_block": r.show_client_block,
             "balance_amount": format_balance(r.balance.amount) if r.balance and r.balance.amount is not None else None,
             "balance_low": bool(r.balance and r.balance.is_low),
             "balance_error": r.balance.error if r.balance else None,
@@ -222,7 +228,8 @@ def client_create(
     metrika_counter_id: str = Form(""),
     telegram_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
-    attribution_model: str = Form("LSC"),
+    monthly_budget: float = Form(0),
+    attribution_model: str = Form("AUTO"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -242,6 +249,7 @@ def client_create(
         metrika_counter_id=counter_id,
         telegram_chat_id=telegram_chat_id.strip(),
         spend_alert_threshold=spend_alert_threshold,
+        monthly_budget=max(monthly_budget, 0),
         attribution_model=attribution_model,
     )
     db.add(client)
@@ -284,7 +292,8 @@ def client_update(
     metrika_counter_id: str = Form(""),
     telegram_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
-    attribution_model: str = Form("LSC"),
+    monthly_budget: float = Form(0),
+    attribution_model: str = Form("AUTO"),
     is_active: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -308,6 +317,7 @@ def client_update(
     client.metrika_counter_id = int(metrika_counter_id) if metrika_counter_id.strip() else None
     client.telegram_chat_id = telegram_chat_id.strip()
     client.spend_alert_threshold = spend_alert_threshold
+    client.monthly_budget = max(monthly_budget, 0)
     client.attribution_model = attribution_model
     client.is_active = is_active == "on"
     db.commit()

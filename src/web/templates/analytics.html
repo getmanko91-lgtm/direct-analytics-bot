@@ -34,7 +34,7 @@
     <a href="/?{{ preset_7days }}" class="btn btn-secondary btn-sm">7 дней</a>
     <a href="/?{{ preset_month }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
   </div>
-  <p class="muted">Суммы с НДС {{ vat_percent }}%. CPA = расход ÷ конверсии по цели.</p>
+  <p class="muted">Суммы с НДС {{ vat_percent }}%. Недельный бюджет = месячный ÷ 4. CPA: &gt;500 ₽ — красный, 300–500 ₽ — жёлтый.</p>
 </div>
 
 <div class="table-wrap">
@@ -42,8 +42,11 @@
     <thead>
       <tr>
         <th>Клиент</th>
+        <th>Бюджет, мес.</th>
         <th>Расход, ₽</th>
         <th>Показы</th>
+        <th>Клики</th>
+        <th>CPC, ₽</th>
         <th>Цель</th>
         <th>Конверсии</th>
         <th>CPA, ₽</th>
@@ -53,20 +56,30 @@
       {% for row in rows %}
       <tr class="{% if row.error %}row-error{% endif %}">
         <td>
+          {% if row.show_client_block %}
           <strong>{{ row.client_name }}</strong>
-          {% if row.show_balance %}
           <div>{{ balance_badge(row.balance_amount, row.balance_low, row.balance_error) }}</div>
           {% endif %}
         </td>
-        <td>{{ row.spend }}</td>
-        <td>{{ row.impressions }}</td>
+        <td>
+          {% if row.show_client_block %}
+          {{ row.monthly_budget }}
+          {% if row.weekly_budget != '—' %}
+          <div class="budget-weekly muted">нед: {{ row.weekly_budget }} ₽</div>
+          {% endif %}
+          {% endif %}
+        </td>
+        <td>{% if row.show_client_block %}{{ row.spend }}{% endif %}</td>
+        <td>{% if row.show_client_block %}{{ row.impressions }}{% endif %}</td>
+        <td>{% if row.show_client_block %}{{ row.clicks }}{% endif %}</td>
+        <td>{% if row.show_client_block %}{{ row.cpc }}{% endif %}</td>
         <td>{{ row.goal_name }}</td>
         <td>{{ row.conversions }}</td>
-        <td>{{ row.cpa }}</td>
+        <td class="{% if row.cpa_class %}{{ row.cpa_class }}{% endif %}">{{ row.cpa }}</td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="6" class="muted">Нет клиентов. <a href="/clients/new">Добавить клиента</a></td>
+        <td colspan="9" class="muted">Нет клиентов. <a href="/clients/new">Добавить клиента</a></td>
       </tr>
       {% endfor %}
     </tbody>

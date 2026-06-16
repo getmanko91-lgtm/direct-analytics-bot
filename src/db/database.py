@@ -33,3 +33,19 @@ def init_db() -> None:
     from src.db import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _migrate_sqlite()
+
+
+def _migrate_sqlite() -> None:
+    if engine.dialect.name != "sqlite":
+        return
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "clients" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("clients")}
+    if "monthly_budget" in columns:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE clients ADD COLUMN monthly_budget FLOAT NOT NULL DEFAULT 0"))
