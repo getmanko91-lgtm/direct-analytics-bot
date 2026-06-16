@@ -14,9 +14,10 @@
   <label>Логин кабинета Яндекс.Директ <span class="muted">(только латиница, как в Директе)</span>
     <input type="text" name="yandex_login" required pattern="[A-Za-z0-9@._\-]+" title="Латинские буквы, цифры, @ . _ -" value="{{ client.yandex_login if client else '' }}">
   </label>
-  <label>ID счётчика Яндекс.Метрики (для синхронизации целей)
-    <input type="number" name="metrika_counter_id" value="{{ client.metrika_counter_id if client and client.metrika_counter_id else '' }}">
+  <label>ID счётчика Яндекс.Метрики <span class="muted">(нужен для загрузки целей)</span>
+    <input type="number" name="metrika_counter_id" value="{{ client.metrika_counter_id if client and client.metrika_counter_id else '' }}" placeholder="например 12345678">
   </label>
+  <p class="muted form-hint">Без счётчика Метрики загрузка целей часто не работает (ошибка Live API 53). ID — число из адреса metrika.yandex.ru/dashboard?id=…</p>
   <label>Telegram chat_id (если отличается от общего)
     <input type="text" name="telegram_chat_id" value="{{ client.telegram_chat_id if client else '' }}">
   </label>

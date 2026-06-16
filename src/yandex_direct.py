@@ -18,7 +18,7 @@ def _chunked(items: list[int], size: int):
 import requests
 from requests.exceptions import ConnectionError as RequestsConnectionError
 
-from src.vat import VAT_RATE, cost_with_vat, cpa_with_vat
+from src.vat import VAT_RATE, cost_with_vat
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ METRIKA_GOALS_URL = "https://api-metrika.yandex.net/management/v1/counter/{count
 
 BASE_REPORT_FIELDS = [
     "Date",
+    "CampaignId",
     "CampaignName",
     "Impressions",
     "Clicks",
@@ -39,7 +40,7 @@ BASE_REPORT_FIELDS = [
 
 MAX_GOALS_PER_REQUEST = 10
 
-# Модели атрибуции для отчёта: основная + запасные (в UI Директа часто «Автоматическая» = AUTO).
+# Запасные модели — только для старых клиентов/отчётов; в API запрашиваем одну модель клиента.
 REPORT_ATTRIBUTION_FALLBACK = ("AUTO", "LYDC", "LSC", "LC", "FC", "FCCD", "LSCCD", "LYDCCD")
 
 
@@ -47,30 +48,58 @@ def _conversion_field(goal_id: int, attribution_model: str) -> str:
     return f"Conversions_{goal_id}_{attribution_model}"
 
 
-def _attribution_models_for_report(primary: str) -> list[str]:
-    order = [primary, *REPORT_ATTRIBUTION_FALLBACK]
-    seen: set[str] = set()
-    result: list[str] = []
-    for model in order:
-        if model and model not in seen:
-            seen.add(model)
-            result.append(model)
-    return result
+def _attribution_models_for_request(primary: str) -> list[str]:
+    """В отчёт передаём только выбранную модель — как в интерфейсе Директа."""
+    model = (primary or "AUTO").strip()
+    return [model]
+
+
+def _report_row_key(row: dict[str, str]) -> tuple[str, str]:
+    day = row.get("Date", "").strip()
+    campaign_id = row.get("CampaignId", "").strip()
+    if campaign_id:
+        return day, f"id:{campaign_id}"
+    name = row.get("CampaignName", "—").strip() or "—"
+    return day, f"name:{name}"
+
+
+def _report_merge_key(row: dict[str, str]) -> tuple[date, str]:
+    day_str, campaign_key = _report_row_key(row)
+    return _parse_date(day_str), campaign_key
+
+
+def _conversion_field_candidates(goal_id: int, attribution_model: str) -> list[str]:
+    model = (attribution_model or "AUTO").strip()
+    return [
+        _conversion_field(goal_id, model),
+        f"Conversions_{goal_id}",
+    ]
 
 
 def conversions_for_goal(row: dict[str, str], goal_id: int, attribution_model: str) -> float:
-    """Конверсии по цели с учётом выбранной модели и запасных колонок в TSV."""
-    for model in _attribution_models_for_report(attribution_model):
-        value = _parse_float(row.get(_conversion_field(goal_id, model), "0"))
-        if value > 0:
-            return value
-    prefix = f"Conversions_{goal_id}_"
-    for key, raw in row.items():
-        if key.startswith(prefix):
-            value = _parse_float(raw)
+    """Конверсии только по выбранной модели атрибуции (без подмешивания других моделей)."""
+    for key in _conversion_field_candidates(goal_id, attribution_model):
+        if key in row:
+            return _parse_float(row.get(key, "0"))
+    return 0.0
+
+
+def cost_per_conversion_for_goal(
+    row: dict[str, str],
+    goal_id: int,
+    attribution_model: str,
+) -> float | None:
+    """CPA из отчёта Директа (без НДС), если колонка есть."""
+    model = (attribution_model or "AUTO").strip()
+    for key in (
+        _cpa_field(goal_id, model),
+        f"CostPerConversion_{goal_id}",
+    ):
+        if key in row:
+            value = _parse_float(row.get(key, "0"))
             if value > 0:
                 return value
-    return 0.0
+    return None
 
 
 def _merge_conversion_columns(
@@ -153,6 +182,17 @@ class YandexDirectError(Exception):
     pass
 
 
+class LiveApiAuthError(YandexDirectError):
+    """Live API v4 недоступен (часто код 53 для агентских токенов)."""
+
+
+LIVE_API_AUTH_HINT = (
+    "Live API Директа недоступен (код 53). Это частая ситуация для агентских токенов. "
+    "Укажите ID счётчика Метрики в карточке клиента — цели загрузятся через API Метрики. "
+    "Счётчик: Метрика → Настройки → счётчик → число в адресе metrika.yandex.ru/dashboard?id=XXXXX"
+)
+
+
 class MetrikaApiError(YandexDirectError):
     pass
 
@@ -203,6 +243,50 @@ class YandexDirectClient:
         campaigns = result.get("result", {}).get("Campaigns", [])
         return [int(c["Id"]) for c in campaigns]
 
+    def fetch_counter_ids_from_campaigns(self) -> list[int]:
+        body = {
+            "method": "get",
+            "params": {
+                "SelectionCriteria": {"States": ["ON", "SUSPENDED", "OFF"]},
+                "FieldNames": ["Id"],
+                "TextCampaignFieldNames": ["CounterIds"],
+                "UnifiedCampaignFieldNames": ["CounterIds"],
+                "DynamicTextCampaignFieldNames": ["CounterIds"],
+                "CpmBannerCampaignFieldNames": ["CounterIds"],
+            },
+        }
+        result = self._post_json(CAMPAIGNS_URL, body)
+        counter_ids: set[int] = set()
+        for campaign in result.get("result", {}).get("Campaigns", []):
+            for block_name in (
+                "TextCampaign",
+                "UnifiedCampaign",
+                "DynamicTextCampaign",
+                "CpmBannerCampaign",
+            ):
+                block = campaign.get(block_name) or {}
+                for counter_id in block.get("CounterIds") or []:
+                    counter_ids.add(int(counter_id))
+        return sorted(counter_ids)
+
+    def fetch_goals_from_campaign_settings(self) -> list[GoalInfo]:
+        """Цели из настроек кампаний (API v5) — запасной путь без Live API."""
+        body = {
+            "method": "get",
+            "params": {
+                "SelectionCriteria": {"States": ["ON", "SUSPENDED", "OFF"]},
+                "FieldNames": ["Id", "Name"],
+                "TextCampaignFieldNames": ["BiddingStrategy", "PriorityGoals"],
+                "UnifiedCampaignFieldNames": ["BiddingStrategy", "PriorityGoals"],
+                "DynamicTextCampaignFieldNames": ["BiddingStrategy", "PriorityGoals"],
+            },
+        }
+        result = self._post_json(CAMPAIGNS_URL, body)
+        found: dict[int, str] = {}
+        for campaign in result.get("result", {}).get("Campaigns", []):
+            _collect_goal_ids_from_object(campaign, found)
+        return [GoalInfo(goal_id=gid, name=name) for gid, name in sorted(found.items())]
+
     def fetch_goals_from_campaigns(self, campaign_ids: list[int] | None = None) -> list[GoalInfo]:
         if campaign_ids is None:
             campaign_ids = self.list_campaign_ids()
@@ -215,7 +299,10 @@ class YandexDirectClient:
                 "method": "GetStatGoals",
                 "param": {"CampaignIDS": list(chunk)},
             }
-            response = self._post_live_v4(body)
+            try:
+                response = self._post_live_v4(body)
+            except LiveApiAuthError:
+                raise
             for item in response.get("data", []):
                 goal_id = int(item["GoalID"])
                 if goal_id not in seen:
@@ -252,32 +339,44 @@ class YandexDirectClient:
         return balances
 
     def fetch_goals_from_metrika(self, counter_id: int) -> list[GoalInfo]:
-        headers = {
-            "Authorization": f"OAuth {self._metrika_token}",
-            "Accept": "application/json",
-        }
         url = METRIKA_GOALS_URL.format(counter_id=counter_id)
-        try:
-            response = requests.get(url, headers=headers, timeout=60)
-        except RequestsConnectionError as exc:
-            raise MetrikaApiError("Не удалось подключиться к API Яндекс.Метрики") from exc
+        last_error: MetrikaApiError | None = None
+        for auth_prefix in ("OAuth", "Bearer"):
+            headers = {
+                "Authorization": f"{auth_prefix} {self._metrika_token}",
+                "Accept": "application/json",
+            }
+            try:
+                response = requests.get(url, headers=headers, timeout=60)
+            except RequestsConnectionError as exc:
+                raise MetrikaApiError("Не удалось подключиться к API Яндекс.Метрики") from exc
 
-        if response.status_code == 403:
-            raise MetrikaApiError(
-                "Токен не имеет доступа к API Метрики. "
-                "Получите OAuth-токен с правом metrika:read или оставьте поле "
-                "«ID счётчика Метрики» пустым — цели загрузятся из Директа."
-            )
-        if response.status_code == 401:
-            raise MetrikaApiError(
-                "Недействительный OAuth-токен для Метрики. "
-                "Укажите YANDEX_METRIKA_TOKEN в .env или обновите токен."
-            )
-        if response.status_code != 200:
-            raise MetrikaApiError(f"Ошибка API Метрики (HTTP {response.status_code}): {response.text}")
+            if response.status_code == 403:
+                last_error = MetrikaApiError(
+                    "Токен не имеет доступа к API Метрики. "
+                    "Добавьте в .env YANDEX_METRIKA_TOKEN с правом metrika:read."
+                )
+                continue
+            if response.status_code == 401:
+                last_error = MetrikaApiError("Недействительный токен для API Метрики.")
+                continue
+            if response.status_code == 404:
+                raise MetrikaApiError(f"Счётчик Метрики {counter_id} не найден или нет доступа.")
+            if response.status_code != 200:
+                last_error = MetrikaApiError(
+                    f"Ошибка API Метрики (HTTP {response.status_code}): {response.text[:200]}"
+                )
+                continue
 
-        goals = response.json().get("goals", [])
-        return [GoalInfo(goal_id=int(g["id"]), name=str(g.get("name", f"Цель {g['id']}"))) for g in goals]
+            goals = response.json().get("goals", [])
+            return [
+                GoalInfo(goal_id=int(g["id"]), name=str(g.get("name", f"Цель {g['id']}")))
+                for g in goals
+            ]
+
+        if last_error:
+            raise last_error
+        raise MetrikaApiError("Не удалось авторизоваться в API Метрики.")
 
     def _fetch_report(
         self,
@@ -306,7 +405,7 @@ class YandexDirectClient:
         }
         if goal_ids:
             params["Goals"] = [str(g) for g in goal_ids]
-            params["AttributionModels"] = _attribution_models_for_report(attribution_model)
+            params["AttributionModels"] = _attribution_models_for_request(attribution_model)
 
         body = {"params": params}
         headers = self._build_report_headers()
@@ -370,9 +469,12 @@ class YandexDirectClient:
             payload = response.json()
             error_code = payload.get("error_code")
             if error_code:
+                if error_code == 53:
+                    last_error = LiveApiAuthError(LIVE_API_AUTH_HINT)
+                    if auth_value.startswith("Bearer"):
+                        continue
+                    raise last_error
                 last_error = YandexDirectError(f"Live API error: {payload}")
-                if error_code == 53 and auth_value.startswith("Bearer"):
-                    continue
                 raise last_error
             return payload
         if last_error:
@@ -434,11 +536,11 @@ class YandexDirectClient:
         attribution_model: str,
     ) -> None:
         for row in rows:
-            key = (_parse_date(row["Date"]), row.get("CampaignName", "—").strip() or "—")
-            if key not in merged:
-                merged[key] = dict(row)
+            merge_key = _report_merge_key(row)
+            if merge_key not in merged:
+                merged[merge_key] = dict(row)
                 continue
-            target = merged[key]
+            target = merged[merge_key]
             _merge_conversion_columns(target, row, goal_ids)
 
     def _group_rows_by_date(
@@ -463,6 +565,24 @@ def _parse_date(value: str) -> date:
     return date.fromisoformat(value.strip())
 
 
+def _collect_goal_ids_from_object(obj, found: dict[int, str]) -> None:
+    if isinstance(obj, dict):
+        for key in ("GoalId", "GoalID"):
+            if key not in obj:
+                continue
+            try:
+                goal_id = int(obj[key])
+            except (TypeError, ValueError):
+                continue
+            if goal_id > 0 and goal_id != 12:
+                found.setdefault(goal_id, f"Цель {goal_id}")
+        for value in obj.values():
+            _collect_goal_ids_from_object(value, found)
+    elif isinstance(obj, list):
+        for item in obj:
+            _collect_goal_ids_from_object(item, found)
+
+
 def _row_to_campaign(
     row: dict[str, str],
     vat_rate: float,
@@ -483,7 +603,16 @@ def _row_to_campaign(
 
     avg_cpc_raw = _parse_float(row.get("AvgCpc", "0"))
     avg_cpc = cost_with_vat(avg_cpc_raw, vat_rate) if avg_cpc_raw else (cost / clicks if clicks else 0.0)
-    cpa = cpa_with_vat(cost_raw, conversions, vat_rate)
+
+    if goal_ids and len(goal_ids) == 1:
+        gid = goal_ids[0]
+        cpa = cost_per_conversion_for_goal(row, gid, attribution_model)
+        if cpa is None and conversions > 0:
+            cpa = cost_raw / conversions
+    elif conversions > 0:
+        cpa = cost_raw / conversions
+    else:
+        cpa = None
 
     return CampaignStats(
         campaign_name=row.get("CampaignName", "—").strip() or "—",

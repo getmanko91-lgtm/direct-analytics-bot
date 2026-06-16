@@ -13,6 +13,7 @@ from src.vat import cost_with_vat
 from src.yandex_direct import (
     YandexDirectClient,
     _merge_conversion_columns,
+    _report_row_key,
     conversions_for_goal,
     _parse_float,
     _parse_int,
@@ -99,13 +100,13 @@ def fetch_analytics_table(
             raw_rows = _fetch_all_report_rows(
                 api, date_from, date_to, goal_ids, client.attribution_model
             )
-            spend, impressions, clicks, conversions_by_goal = _aggregate_rows(
+            spend, impressions, clicks, conversions_by_goal, cost_raw = _aggregate_rows(
                 raw_rows, goal_ids, client.attribution_model, settings.vat_rate
             )
             cpc = (spend / clicks) if clicks > 0 else None
             for goal in selected_goals:
                 conv = conversions_by_goal.get(goal.goal_id, 0.0)
-                cpa = (spend / conv) if conv > 0 else None
+                cpa = (cost_raw / conv) if conv > 0 else None
                 rows.append(
                     AnalyticsRow(
                         client_id=client.id,
@@ -159,7 +160,7 @@ def _fetch_all_report_rows(api, date_from, date_to, goal_ids, attribution_model)
     for chunk in _chunked(goal_ids, MAX_GOALS_PER_REQUEST):
         chunk_rows = api._fetch_report(date_from, date_to, list(chunk), attribution_model)
         for row in chunk_rows:
-            key = (row.get("Date", ""), row.get("CampaignName", "—"))
+            key = _report_row_key(row)
             if key not in merged:
                 merged[key] = dict(row)
             else:
@@ -182,7 +183,7 @@ def _aggregate_rows(rows, goal_ids, attribution_model, vat_rate):
             conversions[gid] += conversions_for_goal(row, gid, attribution_model)
 
     spend = cost_with_vat(cost_raw, vat_rate)
-    return spend, impressions, clicks, conversions
+    return spend, impressions, clicks, conversions, cost_raw
 
 
 def format_analytics_telegram(rows: list[AnalyticsRow], date_from: date, date_to: date) -> str:

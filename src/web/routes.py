@@ -473,10 +473,7 @@ def client_goals_sync(
         )
         message = f"Загружено целей: {len(result.goals)}"
         if result.warnings:
-            message += (
-                ". Дополнительно из Директа не загрузилось (не критично, если список целей ниже есть). "
-                f"{' '.join(result.warnings)}"
-            )
+            message += f". {' '.join(result.warnings)}"
         return RedirectResponse(
             redirect_url(f"/clients/{client_id}/goals", message=message[:400]),
             status_code=303,
