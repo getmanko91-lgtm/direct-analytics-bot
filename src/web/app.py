@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from src.config import Settings, load_settings
 from src.db.database import SessionLocal, init_db
 from src.db.seed import ensure_admin_user
 from src.services.report_runner import run_all_reports
+from src.web.auth_middleware import LoginRequiredMiddleware
 from src.web.routes import router
 
 logger = logging.getLogger(__name__)
@@ -77,11 +79,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Direct Analytics Bot", lifespan=lifespan)
     app.state.settings = settings
 
+    # SessionMiddleware добавляется последним — он снаружи и видит cookie до проверки логина.
+    app.add_middleware(LoginRequiredMiddleware)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
         session_cookie="dab_session",
         max_age=60 * 60 * 24 * 14,
+        same_site="lax",
+        https_only=os.getenv("SESSION_HTTPS_ONLY", "").lower() in ("1", "true", "yes"),
     )
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(router)

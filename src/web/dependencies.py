@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from src.config import Settings
@@ -19,8 +18,9 @@ def get_app_settings(request: Request) -> Settings:
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user_id = request.session.get("user_id")
     if not user_id:
-        return RedirectResponse("/login", status_code=303)  # type: ignore[return-value]
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user = db.get(User, user_id)
     if not user:
-        return RedirectResponse("/login", status_code=303)  # type: ignore[return-value]
+        request.session.clear()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     return user
