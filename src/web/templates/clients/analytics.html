@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}{{ client.name }} — кампании{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="breadcrumb"><a href="/?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}">← Сводка</a></p>
+    <h1>{{ client.name }}</h1>
+    <p class="muted">Кампании за период {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}</p>
+  </div>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card filters-card">
+  <form method="get" class="filters-form">
+    <label>Дата с
+      <input type="date" name="date_from" value="{{ date_from.isoformat() }}" required>
+    </label>
+    <label>Дата по
+      <input type="date" name="date_to" value="{{ date_to.isoformat() }}" required>
+    </label>
+    <button type="submit" class="btn btn-primary">Показать</button>
+  </form>
+  <div class="quick-filters">
+    <span class="muted">Быстрый выбор:</span>
+    <a href="?{{ preset_yesterday }}" class="btn btn-secondary btn-sm">Вчера</a>
+    <a href="?{{ preset_7days }}" class="btn btn-secondary btn-sm">7 дней</a>
+    <a href="?{{ preset_month }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
+  </div>
+</div>
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <span class="summary-label">Расход</span>
+    <strong class="summary-value">{{ total_spend }}</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Конверсии</span>
+    <strong class="summary-value">{{ total_conversions }}</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Бюджет / мес.</span>
+    <strong class="summary-value">{{ monthly_budget }}</strong>
+    {% if weekly_budget != '—' %}
+    <span class="muted summary-sub">нед: {{ weekly_budget }}</span>
+    {% endif %}
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Клики</span>
+    <strong class="summary-value">{{ total_clicks }}</strong>
+  </div>
+</div>
+
+{% if chart_labels %}
+<div class="card chart-card">
+  <h2 class="chart-title">Конверсии по кампаниям</h2>
+  <div class="chart-wrap" style="height: {{ chart_height }}px;">
+    <canvas id="conversionsChart"></canvas>
+  </div>
+</div>
+{% endif %}
+
+<div class="table-wrap">
+  <table class="table analytics-table">
+    <thead>
+      <tr>
+        <th>Кампания</th>
+        <th>Расход, ₽</th>
+        <th>Показы</th>
+        <th>Клики</th>
+        <th>CPC, ₽</th>
+        <th>Конверсии</th>
+        <th>CPA, ₽</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in campaigns %}
+      <tr>
+        <td>{{ row.campaign_name }}</td>
+        <td>{{ row.spend }}</td>
+        <td>{{ row.impressions }}</td>
+        <td>{{ row.clicks }}</td>
+        <td>{{ row.cpc }}</td>
+        <td>{{ row.conversions }}</td>
+        <td class="{% if row.cpa_class %}{{ row.cpa_class }}{% endif %}">{{ row.cpa }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" class="muted">{% if error %}Нет данных{% else %}Кампаний за период не найдено{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if chart_labels %}
+<script>
+(function () {
+  const labels = {{ chart_labels | tojson }};
+  const values = {{ chart_values | tojson }};
+  const ctx = document.getElementById('conversionsChart');
+  if (!ctx || !labels.length) return;
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Конверсии',
+        data: values,
+        backgroundColor: 'rgba(110, 182, 255, 0.75)',
+        borderColor: 'rgba(110, 182, 255, 1)',
+        borderWidth: 1,
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => ` ${item.formattedValue} конв.`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { color: '#8b98a8' },
+          grid: { color: 'rgba(45, 58, 77, 0.6)' },
+        },
+        y: {
+          ticks: { color: '#e7ecf3' },
+          grid: { display: false },
+        },
+      },
+    },
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

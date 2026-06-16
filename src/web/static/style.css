@@ -387,6 +387,64 @@ code {
   font-weight: 600;
 }
 
+.client-link {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.client-link:hover {
+  color: #6eb6ff;
+  text-decoration: underline;
+}
+
+.breadcrumb {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.summary-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.summary-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.summary-value {
+  font-size: 1.35rem;
+}
+
+.summary-sub {
+  font-size: 0.8rem;
+}
+
+.chart-card {
+  margin-bottom: 1.5rem;
+}
+
+.chart-title {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.chart-wrap {
+  position: relative;
+}
+
 @media (max-width: 640px) {
   .container { padding: 1rem; }
   .nav { padding: 0.75rem 1rem; flex-direction: column; gap: 0.75rem; }

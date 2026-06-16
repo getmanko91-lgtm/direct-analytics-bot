@@ -82,7 +82,11 @@ def run_all_reports(db: Session, settings: Settings) -> dict[str, str | None]:
             results[client.name] = "Не указан Telegram chat_id"
             continue
 
-        client_notifier = TelegramNotifier(settings.telegram_bot_token, chat_id)
+        client_notifier = TelegramNotifier(
+            settings.telegram_bot_token,
+            chat_id,
+            proxy=settings.telegram_proxy,
+        )
         try:
             message = run_client_report(db, settings, client)
             client_notifier.send_message(message)

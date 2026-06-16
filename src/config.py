@@ -17,6 +17,7 @@ class Settings:
     yandex_metrika_token: str | None
     telegram_bot_token: str
     telegram_chat_id: str
+    telegram_proxy: str | None
     report_time: str
     timezone: str
     secret_key: str
@@ -45,6 +46,7 @@ def load_settings() -> Settings:
         yandex_metrika_token=os.getenv("YANDEX_METRIKA_TOKEN") or None,
         telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"],
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
+        telegram_proxy=(os.getenv("TELEGRAM_PROXY") or os.getenv("HTTPS_PROXY") or "").strip() or None,
         report_time=os.getenv("REPORT_TIME", "09:00"),
         timezone=os.getenv("TIMEZONE", "Europe/Moscow"),
         secret_key=os.environ["SECRET_KEY"],

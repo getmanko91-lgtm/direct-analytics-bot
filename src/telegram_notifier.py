@@ -15,9 +15,16 @@ class TelegramError(RuntimeError):
 
 
 class TelegramNotifier:
-    def __init__(self, bot_token: str, chat_id: str) -> None:
+    def __init__(
+        self,
+        bot_token: str,
+        chat_id: str,
+        *,
+        proxy: str | None = None,
+    ) -> None:
         self._bot_token = bot_token.strip()
         self._chat_id = self._normalize_chat_id(chat_id)
+        self._proxy = (proxy or "").strip() or None
 
     @staticmethod
     def _normalize_chat_id(chat_id: str) -> str:
@@ -36,7 +43,7 @@ class TelegramNotifier:
             )
 
         chunks = _split_message(text, MAX_MESSAGE_LENGTH - 100)
-        for index, chunk in enumerate(chunks):
+        for chunk in chunks:
             try:
                 self._post(chunk, parse_mode="HTML")
             except TelegramError as exc:
@@ -49,6 +56,12 @@ class TelegramNotifier:
     def send_error(self, error: str) -> None:
         self.send_message(f"❌ <b>Ошибка direct-analytics-bot</b>\n\n{_escape_html(error)}")
 
+    def _request_kwargs(self) -> dict:
+        kwargs: dict = {"timeout": 30}
+        if self._proxy:
+            kwargs["proxies"] = {"http": self._proxy, "https": self._proxy}
+        return kwargs
+
     def _post(self, text: str, parse_mode: str | None) -> None:
         url = TELEGRAM_API_URL.format(token=self._bot_token)
         payload: dict = {
@@ -60,9 +73,9 @@ class TelegramNotifier:
             payload["parse_mode"] = parse_mode
 
         try:
-            response = requests.post(url, json=payload, timeout=30)
+            response = requests.post(url, json=payload, **self._request_kwargs())
         except requests.RequestException as exc:
-            raise TelegramError(f"Не удалось связаться с Telegram: {exc}") from exc
+            raise TelegramError(_format_connection_error(exc, self._proxy)) from exc
 
         try:
             body = response.json()
@@ -75,6 +88,34 @@ class TelegramNotifier:
             raise TelegramError(f"Telegram API ({response.status_code}): {description}. {hint}")
 
         logger.info("Сообщение отправлено в Telegram (chat_id=%s)", self._chat_id)
+
+
+def _format_connection_error(exc: requests.RequestException, proxy: str | None) -> str:
+    message = str(exc)
+    if _is_network_unreachable(message):
+        if proxy:
+            return (
+                "Не удалось связаться с Telegram через прокси. "
+                f"Проверьте TELEGRAM_PROXY в .env (сейчас задан). Ошибка: {message}"
+            )
+        return (
+            "Не удалось связаться с Telegram: сервер не может подключиться к api.telegram.org. "
+            "На VPS в РФ Telegram часто заблокирован — добавьте в .env прокси: "
+            "TELEGRAM_PROXY=socks5://логин:пароль@хост:порт (или http://...). "
+            f"Подробнее: {message}"
+        )
+    return f"Не удалось связаться с Telegram: {message}"
+
+
+def _is_network_unreachable(message: str) -> bool:
+    lowered = message.lower()
+    return (
+        "network is unreachable" in lowered
+        or "failed to establish a new connection" in lowered
+        or "name or service not known" in lowered
+        or "temporary failure in name resolution" in lowered
+        or "connection timed out" in lowered
+    )
 
 
 def _split_message(text: str, max_len: int) -> list[str]:

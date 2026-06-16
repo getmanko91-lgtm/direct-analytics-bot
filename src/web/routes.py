@@ -13,6 +13,7 @@ from src.db.database import get_db
 from src.db.models import Client, User
 from src.services.analytics_table import fetch_analytics_table, format_analytics_telegram
 from src.services.client_balances import fetch_client_balances, format_balance
+from src.services.client_campaigns import fetch_client_campaign_report
 from src.services.cpa_style import cpa_highlight_class
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
@@ -101,6 +102,7 @@ def analytics_page(
     rows = fetch_analytics_table(db, settings, date_from, date_to)
     display_rows = [
         {
+            "client_id": r.client_id,
             "client_name": r.client_name,
             "monthly_budget": _fmt_money(r.monthly_budget) if r.monthly_budget > 0 else "—",
             "weekly_budget": _fmt_money(r.weekly_budget) if r.weekly_budget > 0 else "—",
@@ -163,7 +165,7 @@ def analytics_send_telegram(
     try:
         rows = fetch_analytics_table(db, settings, d_from, d_to)
         message = format_analytics_telegram(rows, d_from, d_to)
-        TelegramNotifier(settings.telegram_bot_token, chat_id).send_message(message)
+        TelegramNotifier(settings.telegram_bot_token, chat_id, proxy=settings.telegram_proxy).send_message(message)
         return RedirectResponse(
             redirect_url("/", date_from=d_from.isoformat(), date_to=d_to.isoformat(), message="Сводка отправлена в Telegram"),
             status_code=303,
@@ -207,6 +209,71 @@ def clients_list(
             "user": user,
             "client_rows": client_rows,
             "message": request.query_params.get("message"),
+        },
+    )
+
+
+@router.get("/clients/{client_id}/analytics", response_class=HTMLResponse)
+def client_analytics_page(
+    request: Request,
+    client_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    date_from, date_to = _period_from_request(request)
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    report = fetch_client_campaign_report(db, settings, client_id, date_from, date_to)
+    if not report:
+        return RedirectResponse("/clients", status_code=303)
+
+    def _fmt_conv(value: float) -> str:
+        if value == int(value):
+            return str(int(value))
+        return f"{value:.2f}".replace(".", ",")
+
+    by_conversions = sorted(report.campaigns, key=lambda c: c.conversions, reverse=True)
+    chart_rows = [c for c in by_conversions if c.conversions > 0]
+
+    display_campaigns = [
+        {
+            "campaign_name": c.campaign_name,
+            "spend": _fmt_money(c.spend),
+            "impressions": _fmt_int(c.impressions),
+            "clicks": _fmt_int(c.clicks),
+            "cpc": _fmt_money(c.cpc) if c.cpc is not None else "—",
+            "conversions": _fmt_conv(c.conversions),
+            "cpa": _fmt_money(c.cpa) if c.cpa is not None else "—",
+            "cpa_class": c.cpa_class,
+        }
+        for c in report.campaigns
+    ]
+
+    month_budget = float(report.client.monthly_budget or 0)
+    return templates.TemplateResponse(
+        request,
+        "clients/analytics.html",
+        {
+            "user": user,
+            "client": report.client,
+            "date_from": date_from,
+            "date_to": date_to,
+            "error": report.error,
+            "total_spend": _fmt_money(report.total_spend) if not report.error else "—",
+            "total_clicks": _fmt_int(report.total_clicks) if not report.error else "—",
+            "total_conversions": _fmt_conv(report.total_conversions) if not report.error else "—",
+            "monthly_budget": _fmt_money(month_budget) if month_budget > 0 else "—",
+            "weekly_budget": _fmt_money(report.weekly_budget) if report.weekly_budget > 0 else "—",
+            "campaigns": display_campaigns,
+            "chart_labels": [c.campaign_name for c in chart_rows],
+            "chart_values": [c.conversions for c in chart_rows],
+            "chart_height": min(420, max(220, len(chart_rows) * 42)),
+            "vat_percent": int(settings.vat_rate * 100),
+            "preset_yesterday": f"date_from={yesterday.isoformat()}&date_to={yesterday.isoformat()}",
+            "preset_7days": f"date_from={(today - timedelta(days=7)).isoformat()}&date_to={yesterday.isoformat()}",
+            "preset_month": f"date_from={today.replace(day=1).isoformat()}&date_to={yesterday.isoformat()}",
         },
     )
 
@@ -456,7 +523,7 @@ def client_send_now(
     chat_id = client.telegram_chat_id or get_setting(db, "telegram_chat_id") or settings.telegram_chat_id
     try:
         message = run_client_report(db, settings, client)
-        TelegramNotifier(settings.telegram_bot_token, chat_id).send_message(message)
+        TelegramNotifier(settings.telegram_bot_token, chat_id, proxy=settings.telegram_proxy).send_message(message)
         return RedirectResponse(
             redirect_url(f"/clients/{client_id}/preview", message="Отправлено"),
             status_code=303,

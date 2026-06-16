@@ -57,7 +57,9 @@
       <tr class="{% if row.error %}row-error{% endif %}">
         <td>
           {% if row.show_client_block %}
-          <strong>{{ row.client_name }}</strong>
+          <a href="/clients/{{ row.client_id }}/analytics?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="client-link">
+            <strong>{{ row.client_name }}</strong>
+          </a>
           <div>{{ balance_badge(row.balance_amount, row.balance_low, row.balance_error) }}</div>
           {% endif %}
         </td>
