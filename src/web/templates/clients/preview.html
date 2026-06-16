@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Превью — {{ client.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Превью отчёта: {{ client.name }}</h1>
+  <form action="/clients/{{ client.id }}/send" method="post">
+    <button type="submit" class="btn btn-primary">Отправить в Telegram</button>
+  </form>
+</div>
+
+{% if request.query_params.get('message') %}
+<div class="alert alert-success">{{ request.query_params.get('message') }}</div>
+{% endif %}
+{% if error or request.query_params.get('error') %}
+<div class="alert alert-error">{{ error or request.query_params.get('error') }}</div>
+{% endif %}
+
+{% if preview_text %}
+<pre class="preview-box">{{ preview_text }}</pre>
+{% elif not error %}
+<p class="muted">Загрузка...</p>
+{% endif %}
+
+<p><a href="/clients/{{ client.id }}/goals">← Назад к целям</a></p>
+{% endblock %}

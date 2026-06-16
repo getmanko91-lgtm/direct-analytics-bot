@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Клиенты{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Клиенты</h1>
+  <a href="/clients/new" class="btn btn-primary">+ Добавить клиента</a>
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+{% if clients %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Название</th>
+      <th>Логин</th>
+      <th>Метрика</th>
+      <th>Цели выбраны</th>
+      <th>Атрибуция</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for client in clients %}
+    <tr>
+      <td><strong>{{ client.name }}</strong></td>
+      <td><code>{{ client.yandex_login }}</code></td>
+      <td>{{ client.metrika_counter_id or '—' }}</td>
+      <td>{{ client.goals|selectattr('is_selected')|list|length }}</td>
+      <td>{{ client.attribution_model }}</td>
+      <td class="actions">
+        <a href="/clients/{{ client.id }}/goals">Цели</a>
+        <a href="/clients/{{ client.id }}/edit">Изменить</a>
+        <form action="/clients/{{ client.id }}/delete" method="post" class="inline" onsubmit="return confirm('Удалить клиента «{{ client.name }}»?');">
+          <button type="submit" class="link-btn link-btn-danger">Удалить</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Нет клиентов. <a href="/clients/new">Добавить</a></p>
+{% endif %}
+{% endblock %}

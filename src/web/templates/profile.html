@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Профиль{% endblock %}
+{% block content %}
+<h1>Личный профиль</h1>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<form method="post" class="form card">
+  <label>Логин
+    <input type="text" value="{{ user.username }}" disabled>
+  </label>
+  <label>Отображаемое имя
+    <input type="text" name="display_name" value="{{ user.display_name }}">
+  </label>
+  <label>Текущий пароль
+    <input type="password" name="current_password" required autocomplete="current-password">
+  </label>
+  <label>Новый пароль (оставьте пустым, если не меняете)
+    <input type="password" name="new_password" autocomplete="new-password">
+  </label>
+  <button type="submit" class="btn btn-primary">Сохранить</button>
+</form>
+{% endblock %}

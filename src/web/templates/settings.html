@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Настройки{% endblock %}
+{% block content %}
+<h1>Настройки</h1>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+<form method="post" class="form card">
+  <label>Общий Telegram chat_id
+    <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}">
+  </label>
+  <label>Время ежедневной отправки (HH:MM)
+    <input type="time" name="report_time" value="{{ report_time }}">
+  </label>
+  <label>Часовой пояс
+    <input type="text" name="timezone" value="{{ timezone }}">
+  </label>
+  <p class="muted">OAuth-токен Директа и токен Telegram-бота задаются в файле <code>.env</code>. После изменения времени отправки перезапустите сервис.</p>
+  <button type="submit" class="btn btn-primary">Сохранить</button>
+</form>
+{% endblock %}

@@ -1,0 +1,14 @@
+services:
+  direct-analytics-bot:
+    build: .
+    container_name: direct-analytics-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      WEB_HOST: "0.0.0.0"
+      WEB_PORT: "8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data

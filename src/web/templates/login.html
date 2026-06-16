@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Вход — Direct Analytics{% endblock %}
+{% block content %}
+<div class="auth-card">
+  <h1>Вход в личный кабинет</h1>
+  <p class="muted">Ежедневная аналитика Яндекс.Директ</p>
+  {% if error %}
+  <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+  <form method="post" class="form">
+    <label>Логин
+      <input type="text" name="username" required autofocus autocomplete="username">
+    </label>
+    <label>Пароль
+      <input type="password" name="password" required autocomplete="current-password">
+    </label>
+    <button type="submit" class="btn btn-primary">Войти</button>
+  </form>
+</div>
+{% endblock %}

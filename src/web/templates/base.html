@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Direct Analytics{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  {% if user %}
+  <nav class="nav">
+    <a href="/" class="brand">Direct Analytics</a>
+    <div class="nav-links">
+      <a href="/">Сводка</a>
+      <a href="/clients">Клиенты</a>
+      <a href="/settings">Настройки</a>
+      <a href="/profile">{{ user.display_name or user.username }}</a>
+      <form action="/logout" method="post" class="inline">
+        <button type="submit" class="link-btn">Выйти</button>
+      </form>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

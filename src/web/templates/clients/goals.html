@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Цели — {{ client.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Цели: {{ client.name }}</h1>
+    <p class="muted">Логин: <code>{{ client.yandex_login }}</code> · Выбрано: {{ selected_count }}</p>
+  </div>
+  <form action="/clients/{{ client.id }}/goals/sync" method="post">
+    <button type="submit" class="btn btn-secondary">Синхронизировать из Директа/Метрики</button>
+  </form>
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{% if client.goals %}
+<form method="post" class="card">
+  <p class="muted">Отметьте цели, по которым считать конверсии и CPA (макс. 10 за один запрос API — при большем числе отчёт собирается частями).</p>
+  <p class="muted">Если указан ID счётчика Метрики — цели подтягиваются и оттуда. Без доступа к Метрике достаточно синхронизации из Директа (оставьте ID счётчика пустым).</p>
+  <div class="goals-list">
+    {% for goal in client.goals|sort(attribute='goal_name') %}
+    <label class="goal-item">
+      <input type="checkbox" name="selected" value="{{ goal.goal_id }}" {% if goal.is_selected %}checked{% endif %}>
+      <span>
+        <strong>{{ goal.goal_name }}</strong>
+        <span class="muted">ID: {{ goal.goal_id }}</span>
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+  <button type="submit" class="btn btn-primary">Сохранить выбор</button>
+</form>
+{% else %}
+<div class="card">
+  <p>Цели ещё не загружены. Нажмите «Синхронизировать» — сервис получит список из Метрики (если указан счётчик) и кампаний Директа.</p>
+</div>
+{% endif %}
+{% endblock %}
