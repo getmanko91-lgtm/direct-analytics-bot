@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
@@ -11,6 +11,7 @@ from src.auth import hash_password, verify_password
 from src.config import Settings
 from src.db.database import get_db
 from src.db.models import Client, User
+from src.services.analytics_export import build_analytics_xlsx, export_filename
 from src.services.analytics_table import fetch_analytics_table, format_analytics_telegram
 from src.services.client_balances import fetch_client_balances, format_balance
 from src.services.client_campaigns import fetch_client_campaign_report
@@ -145,6 +146,31 @@ def analytics_page(
             "preset_7days": f"date_from={(today - timedelta(days=7)).isoformat()}&date_to={yesterday.isoformat()}",
             "preset_month": f"date_from={today.replace(day=1).isoformat()}&date_to={yesterday.isoformat()}",
         },
+    )
+
+
+@router.get("/analytics/export")
+def analytics_export(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    date_from, date_to = _period_from_request(request)
+    rows = fetch_analytics_table(db, settings, date_from, date_to)
+    cpa_classes = [cpa_highlight_class(r.cpa) if not r.error else "" for r in rows]
+    content = build_analytics_xlsx(
+        rows,
+        date_from,
+        date_to,
+        cpa_classes=cpa_classes,
+        vat_percent=int(settings.vat_rate * 100),
+    )
+    filename = export_filename(date_from, date_to)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -450,6 +476,7 @@ def client_goals_page(
             "selected_count": selected_count,
             "message": request.query_params.get("message"),
             "error": request.query_params.get("error"),
+            "warn": request.query_params.get("warn"),
         },
     )
 
@@ -472,10 +499,13 @@ def client_goals_sync(
             metrika_token=settings.yandex_metrika_token,
         )
         message = f"Загружено целей: {len(result.goals)}"
+        if result.sources:
+            message += f". Источник: {', '.join(result.sources)}."
+        query = {"message": message[:300]}
         if result.warnings:
-            message += f". {' '.join(result.warnings)}"
+            query["warn"] = " ".join(result.warnings)[:600]
         return RedirectResponse(
-            redirect_url(f"/clients/{client_id}/goals", message=message[:400]),
+            redirect_url(f"/clients/{client_id}/goals", **query),
             status_code=303,
         )
     except Exception as exc:

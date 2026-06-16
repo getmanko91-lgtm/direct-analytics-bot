@@ -4,11 +4,14 @@
 {% block content %}
 <div class="page-header">
   <h1>Сводная аналитика</h1>
-  <form action="/analytics/send" method="post" class="inline">
-    <input type="hidden" name="date_from" value="{{ date_from.isoformat() }}">
-    <input type="hidden" name="date_to" value="{{ date_to.isoformat() }}">
-    <button type="submit" class="btn btn-primary">Отправить в Telegram</button>
-  </form>
+  <div class="page-header-actions">
+    <a href="/analytics/export?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="btn btn-secondary">Скачать Excel</a>
+    <form action="/analytics/send" method="post" class="inline">
+      <input type="hidden" name="date_from" value="{{ date_from.isoformat() }}">
+      <input type="hidden" name="date_to" value="{{ date_to.isoformat() }}">
+      <button type="submit" class="btn btn-primary">Отправить в Telegram</button>
+    </form>
+  </div>
 </div>
 
 {% if message %}
@@ -34,7 +37,7 @@
     <a href="/?{{ preset_7days }}" class="btn btn-secondary btn-sm">7 дней</a>
     <a href="/?{{ preset_month }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
   </div>
-  <p class="muted">Расход с НДС {{ vat_percent }}%. CPA как в Директе (без НДС). Конверсии — по модели атрибуции клиента. CPA: &lt;300 ₽ — зелёный, 300–500 ₽ — жёлтый, &gt;500 ₽ — красный.</p>
+  <p class="muted">Расход с НДС {{ vat_percent }}%. CPA как в Директе (без НДС). «Скачать Excel» — файл откроется в Excel или Google Таблицах (Файл → Импорт).</p>
 </div>
 
 <div class="table-wrap">
