@@ -406,6 +406,25 @@ code {
   font-weight: 600;
 }
 
+.cpa-compare {
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-top: 0.2rem;
+  line-height: 1.2;
+}
+
+.cpa-compare-good {
+  color: #8ef0c0;
+}
+
+.cpa-compare-bad {
+  color: #ffb3a6;
+}
+
+.cpa-compare-neutral {
+  color: var(--muted);
+}
+
 .budget-pacing-card {
   margin-bottom: 1.5rem;
 }

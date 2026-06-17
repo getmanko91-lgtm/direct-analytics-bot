@@ -37,7 +37,7 @@
     <a href="/?{{ preset_7days }}" class="btn btn-secondary btn-sm">7 дней</a>
     <a href="/?{{ preset_month }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
   </div>
-  <p class="muted">Расход с НДС {{ vat_percent }}%. CPA как в Директе (без НДС). «Скачать Excel» — файл откроется в Excel или Google Таблицах (Файл → Импорт).</p>
+  <p class="muted">Расход с НДС {{ vat_percent }}%. CPA как в Директе (без НДС). Сравнение CPA — с периодом {{ compare_period }}. «Скачать Excel» — файл откроется в Excel или Google Таблицах (Файл → Импорт).</p>
 </div>
 
 <div class="table-wrap">
@@ -80,7 +80,12 @@
         <td>{% if row.show_client_block %}{{ row.cpc }}{% endif %}</td>
         <td>{{ row.goal_name }}</td>
         <td>{{ row.conversions }}</td>
-        <td class="{% if row.cpa_class %}{{ row.cpa_class }}{% endif %}">{{ row.cpa }}</td>
+        <td class="{% if row.cpa_class %}{{ row.cpa_class }}{% endif %}">
+          {{ row.cpa }}
+          {% if row.cpa_compare %}
+          <div class="cpa-compare {{ row.cpa_compare_class }}">{{ row.cpa_compare }}</div>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
       <tr>

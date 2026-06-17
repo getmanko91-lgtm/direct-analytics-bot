@@ -19,7 +19,13 @@ from src.services.analytics_table import (
 from src.services.client_balances import fetch_client_balances, format_balance
 from src.services.client_analytics_bundle import fetch_client_analytics_bundle_cached
 from src.services.budget_pacing import build_budget_pacing
-from src.services.cpa_style import cpa_chart_color, cpa_highlight_class
+from src.services.cpa_style import (
+    cpa_chart_color,
+    cpa_compare_display,
+    cpa_highlight_class,
+    format_period_short,
+    previous_period,
+)
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.client_reports import fetch_client_reports_cached, format_period, metrics_to_display
 from src.services.client_reports_export import build_client_reports_xlsx, export_filename as client_reports_export_filename
@@ -116,11 +122,26 @@ def analytics_page(
 ):
     settings = get_settings_dep(request)
     date_from, date_to = _period_from_request(request)
+    prev_from, prev_to = previous_period(date_from, date_to)
     today = date.today()
     yesterday = today - timedelta(days=1)
 
     rows = fetch_analytics_table_cached(db, settings, date_from, date_to)
-    display_rows = [
+    prev_rows = fetch_analytics_table_cached(db, settings, prev_from, prev_to)
+    prev_cpa_by_goal = {
+        (r.client_id, r.goal_id): r.cpa
+        for r in prev_rows
+        if not r.error and r.cpa is not None
+    }
+
+    display_rows = []
+    for r in rows:
+        cpa_compare, cpa_compare_class = cpa_compare_display(
+            r.cpa,
+            prev_cpa_by_goal.get((r.client_id, r.goal_id)),
+            fmt_money=_fmt_money,
+        )
+        display_rows.append(
         {
             "client_id": r.client_id,
             "client_name": r.client_name,
@@ -140,14 +161,15 @@ def analytics_page(
             else "—",
             "cpa": _fmt_money(r.cpa) if r.cpa is not None else ("—" if not r.error else r.error),
             "cpa_class": cpa_highlight_class(r.cpa) if not r.error else "",
+            "cpa_compare": cpa_compare,
+            "cpa_compare_class": cpa_compare_class,
             "error": r.error,
             "show_client_block": r.show_client_block,
             "balance_amount": format_balance(r.balance.amount) if r.balance and r.balance.amount is not None else None,
             "balance_low": bool(r.balance and r.balance.is_low),
             "balance_error": r.balance.error if r.balance else None,
         }
-        for r in rows
-    ]
+        )
 
     return templates.TemplateResponse(
         request,
@@ -163,6 +185,7 @@ def analytics_page(
             "preset_yesterday": f"date_from={yesterday.isoformat()}&date_to={yesterday.isoformat()}",
             "preset_7days": f"date_from={(today - timedelta(days=7)).isoformat()}&date_to={yesterday.isoformat()}",
             "preset_month": f"date_from={today.replace(day=1).isoformat()}&date_to={yesterday.isoformat()}",
+            "compare_period": format_period_short(prev_from, prev_to),
         },
     )
 

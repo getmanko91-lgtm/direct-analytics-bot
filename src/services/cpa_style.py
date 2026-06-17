@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
+from typing import Callable
+
 CPA_HIGH_THRESHOLD = 500.0
 CPA_MEDIUM_THRESHOLD = 300.0
 WEEKS_PER_MONTH = 4.0
@@ -35,3 +38,40 @@ def cpa_chart_color(cpa: float | None) -> str:
         "cpa-medium": "rgba(255, 193, 7, 0.85)",
         "cpa-low": "rgba(61, 214, 140, 0.85)",
     }.get(css_class, "rgba(110, 182, 255, 0.75)")
+
+
+def previous_period(date_from: date, date_to: date) -> tuple[date, date]:
+    """Предыдущий период той же длины, сразу до выбранного."""
+    days = (date_to - date_from).days + 1
+    prev_to = date_from - timedelta(days=1)
+    prev_from = prev_to - timedelta(days=days - 1)
+    return prev_from, prev_to
+
+
+def format_period_short(date_from: date, date_to: date) -> str:
+    if date_from == date_to:
+        return date_from.strftime("%d.%m.%Y")
+    return f"{date_from.strftime('%d.%m.%Y')} — {date_to.strftime('%d.%m.%Y')}"
+
+
+def cpa_compare_display(
+    current: float | None,
+    previous: float | None,
+    *,
+    fmt_money: Callable[[float], str],
+) -> tuple[str, str]:
+    """Текст сравнения CPA и CSS-класс (ниже CPA — лучше)."""
+    if current is None or previous is None or previous <= 0:
+        return "", ""
+
+    pct = (current - previous) / previous * 100
+    prev_text = fmt_money(previous)
+
+    if abs(pct) < 0.5:
+        return f"как было ({prev_text})", "cpa-compare-neutral"
+
+    if pct < 0:
+        return f"▼ {abs(pct):.0f}% (было {prev_text})", "cpa-compare-good"
+
+    return f"▲ +{pct:.0f}% (было {prev_text})", "cpa-compare-bad"
+
