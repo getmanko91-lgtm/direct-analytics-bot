@@ -21,6 +21,7 @@ from src.services.client_campaigns import fetch_client_campaign_report_cached
 from src.services.budget_pacing import build_budget_pacing
 from src.services.cpa_style import cpa_chart_color, cpa_highlight_class
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
+from src.services.kpi_table import fetch_kpi_table_cached
 from src.services.rsya_placements import fetch_rsya_zero_conversion_placements_cached
 from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
 from src.telegram_notifier import TelegramError, TelegramNotifier
@@ -187,6 +188,53 @@ def analytics_export(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/kpi", response_class=HTMLResponse)
+def kpi_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    date_from, date_to = _period_from_request(request)
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    rows = fetch_kpi_table_cached(db, settings, date_from, date_to)
+    display_rows = [
+        {
+            "client_id": r.client_id,
+            "client_name": r.client_name,
+            "directologist": r.directologist,
+            "spend": _fmt_money(r.spend) if not r.error else "—",
+            "conversions": (
+                str(int(r.conversions))
+                if r.conversions == int(r.conversions)
+                else f"{r.conversions:.2f}".replace(".", ",")
+            )
+            if not r.error
+            else "—",
+            "cpa": _fmt_money(r.cpa) if r.cpa is not None else ("—" if not r.error else "—"),
+            "error": r.error,
+        }
+        for r in rows
+    ]
+    return templates.TemplateResponse(
+        request,
+        "kpi.html",
+        {
+            "user": user,
+            "rows": display_rows,
+            "date_from": date_from,
+            "date_to": date_to,
+            "message": request.query_params.get("message"),
+            "error": request.query_params.get("error"),
+            "preset_yesterday": f"date_from={yesterday.isoformat()}&date_to={yesterday.isoformat()}",
+            "preset_7days": f"date_from={(today - timedelta(days=7)).isoformat()}&date_to={yesterday.isoformat()}",
+            "preset_month": f"date_from={today.replace(day=1).isoformat()}&date_to={yesterday.isoformat()}",
+        },
     )
 
 
@@ -406,6 +454,7 @@ def client_create(
     telegram_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
     monthly_budget: float = Form(0),
+    directologist: str = Form("Ксюша"),
     attribution_model: str = Form("AUTO"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -427,6 +476,7 @@ def client_create(
         telegram_chat_id=telegram_chat_id.strip(),
         spend_alert_threshold=spend_alert_threshold,
         monthly_budget=max(monthly_budget, 0),
+        directologist=directologist if directologist in {"Ксюша", "Лариса"} else "Ксюша",
         attribution_model=attribution_model,
     )
     db.add(client)
@@ -470,6 +520,7 @@ def client_update(
     telegram_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
     monthly_budget: float = Form(0),
+    directologist: str = Form("Ксюша"),
     attribution_model: str = Form("AUTO"),
     is_active: str | None = Form(None),
     user: User = Depends(get_current_user),
@@ -495,6 +546,7 @@ def client_update(
     client.telegram_chat_id = telegram_chat_id.strip()
     client.spend_alert_threshold = spend_alert_threshold
     client.monthly_budget = max(monthly_budget, 0)
+    client.directologist = directologist if directologist in {"Ксюша", "Лариса"} else "Ксюша"
     client.attribution_model = attribution_model
     client.is_active = is_active == "on"
     db.commit()

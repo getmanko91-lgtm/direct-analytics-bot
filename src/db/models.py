@@ -36,6 +36,7 @@ class Client(Base):
     telegram_chat_id: Mapped[str] = mapped_column(String(64), default="")
     spend_alert_threshold: Mapped[float] = mapped_column(Float, default=0.0)
     monthly_budget: Mapped[float] = mapped_column(Float, default=0.0)
+    directologist: Mapped[str] = mapped_column(String(32), default="Ксюша")
     attribution_model: Mapped[str] = mapped_column(String(16), default="AUTO")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

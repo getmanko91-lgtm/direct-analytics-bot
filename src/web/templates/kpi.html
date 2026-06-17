@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}KPI{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>KPI</h1>
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card filters-card">
+  <form method="get" class="filters-form">
+    <label>Дата с
+      <input type="date" name="date_from" value="{{ date_from.isoformat() }}" required>
+    </label>
+    <label>Дата по
+      <input type="date" name="date_to" value="{{ date_to.isoformat() }}" required>
+    </label>
+    <button type="submit" class="btn btn-primary">Показать</button>
+  </form>
+  <div class="quick-filters">
+    <span class="muted">Быстрый выбор:</span>
+    <a href="/kpi?{{ preset_yesterday }}" class="btn btn-secondary btn-sm">Вчера</a>
+    <a href="/kpi?{{ preset_7days }}" class="btn btn-secondary btn-sm">7 дней</a>
+    <a href="/kpi?{{ preset_month }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
+  </div>
+  <p class="muted">Считаются только кампании, название которых начинается с «КОНВЕР».</p>
+</div>
+
+<div class="table-wrap">
+  <table class="table analytics-table">
+    <thead>
+      <tr>
+        <th>Клиент</th>
+        <th>Директолог</th>
+        <th>Расход, ₽</th>
+        <th>Количество конверсий</th>
+        <th>Стоимость конверсии, ₽</th>
+        <th>Примечание</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr class="{% if row.error %}row-error{% endif %}">
+        <td>{{ row.client_name }}</td>
+        <td>{{ row.directologist }}</td>
+        <td>{{ row.spend }}</td>
+        <td>{{ row.conversions }}</td>
+        <td>{{ row.cpa }}</td>
+        <td>{{ row.error or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" class="muted">Нет данных</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
