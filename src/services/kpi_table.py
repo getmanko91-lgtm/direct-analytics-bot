@@ -18,7 +18,12 @@ from src.yandex_direct import (
     conversions_for_goal,
 )
 
-KONVER_PREFIX = "КОНВЕР"
+KPI_CAMPAIGN_PREFIXES = ("КОНВЕР", "МК", "ЕПК", "ТМК")
+
+
+def _is_kpi_campaign(campaign_name: str) -> bool:
+    upper = campaign_name.strip().upper()
+    return any(upper.startswith(prefix) for prefix in KPI_CAMPAIGN_PREFIXES)
 
 
 @dataclass(frozen=True)
@@ -65,7 +70,7 @@ def fetch_kpi_table(
         try:
             api = YandexDirectClient(settings.yandex_token, client.yandex_login)
             rows = _fetch_all_report_rows(api, date_from, date_to, goal_ids, client.attribution_model)
-            spend_raw, conversions = _aggregate_kpi_for_konver(rows, goal_ids, client.attribution_model)
+            spend_raw, conversions = _aggregate_kpi_campaigns(rows, goal_ids, client.attribution_model)
             spend = cost_with_vat(spend_raw, settings.vat_rate)
             cpa = (spend_raw / conversions) if conversions > 0 else None
             result.append(
@@ -124,7 +129,7 @@ def _fetch_all_report_rows(api, date_from, date_to, goal_ids, attribution_model)
     return list(merged.values())
 
 
-def _aggregate_kpi_for_konver(
+def _aggregate_kpi_campaigns(
     rows: list[dict[str, str]],
     goal_ids: list[int],
     attribution_model: str,
@@ -133,7 +138,7 @@ def _aggregate_kpi_for_konver(
     conversions = 0.0
     for row in rows:
         campaign_name = (row.get("CampaignName") or "").strip()
-        if not campaign_name.upper().startswith(KONVER_PREFIX):
+        if not _is_kpi_campaign(campaign_name):
             continue
         spend_raw += _parse_float(row.get("Cost", "0"))
         for gid in goal_ids:
