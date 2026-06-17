@@ -21,6 +21,8 @@ from src.services.client_campaigns import fetch_client_campaign_report_cached
 from src.services.budget_pacing import build_budget_pacing
 from src.services.cpa_style import cpa_chart_color, cpa_highlight_class
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
+from src.services.client_reports import fetch_client_reports_cached, format_period, metrics_to_display
+from src.services.client_reports_export import build_client_reports_xlsx, export_filename as client_reports_export_filename
 from src.services.kpi_table import fetch_kpi_table_cached
 from src.services.rsya_placements import fetch_rsya_zero_conversion_placements_cached
 from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
@@ -235,6 +237,98 @@ def kpi_page(
             "preset_7days": f"date_from={(today - timedelta(days=7)).isoformat()}&date_to={yesterday.isoformat()}",
             "preset_month": f"date_from={today.replace(day=1).isoformat()}&date_to={yesterday.isoformat()}",
         },
+    )
+
+
+def _client_reports_period(request: Request) -> tuple[date, date]:
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    default_from = today.replace(day=1)
+    date_from = _parse_date(request.query_params.get("date_from"), default_from)
+    date_to = _parse_date(request.query_params.get("date_to"), yesterday)
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+    return date_from, date_to
+
+
+def _client_report_to_display(report, vat_rate: float) -> dict:
+    week_rows = []
+    for (week_from, week_to), metrics in zip(report.weeks, report.week_metrics, strict=True):
+        row = metrics_to_display(metrics, vat_rate)
+        row["period"] = format_period(week_from, week_to)
+        week_rows.append(row)
+
+    total = metrics_to_display(report.total, vat_rate)
+    if report.weeks:
+        total_label = f"Итого {format_period(report.weeks[0][0], report.weeks[-1][1])}"
+    else:
+        total_label = "Итого"
+
+    plan_budget = _fmt_money(report.plan_budget) if report.plan_budget > 0 else "—"
+
+    return {
+        "client_name": report.client_name,
+        "error": report.error,
+        "week_rows": week_rows,
+        "total": total,
+        "total_label": total_label,
+        "plan_budget": plan_budget,
+    }
+
+
+@router.get("/client-reports", response_class=HTMLResponse)
+def client_reports_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    date_from, date_to = _client_reports_period(request)
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    first_of_month = today.replace(day=1)
+    prev_month_end = first_of_month - timedelta(days=1)
+    prev_month_start = prev_month_end.replace(day=1)
+
+    reports_raw = fetch_client_reports_cached(db, settings, date_from, date_to)
+    reports = [_client_report_to_display(r, settings.vat_rate) for r in reports_raw]
+
+    return templates.TemplateResponse(
+        request,
+        "client_reports.html",
+        {
+            "user": user,
+            "reports": reports,
+            "date_from": date_from,
+            "date_to": date_to,
+            "message": request.query_params.get("message"),
+            "error": request.query_params.get("error"),
+            "preset_month": f"date_from={first_of_month.isoformat()}&date_to={yesterday.isoformat()}",
+            "preset_prev_month": f"date_from={prev_month_start.isoformat()}&date_to={prev_month_end.isoformat()}",
+        },
+    )
+
+
+@router.get("/client-reports/export")
+def client_reports_export(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    date_from, date_to = _client_reports_period(request)
+    reports = fetch_client_reports_cached(db, settings, date_from, date_to)
+    content = build_client_reports_xlsx(
+        reports,
+        date_from,
+        date_to,
+        vat_percent=int(settings.vat_rate * 100),
+    )
+    filename = client_reports_export_filename(date_from, date_to)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

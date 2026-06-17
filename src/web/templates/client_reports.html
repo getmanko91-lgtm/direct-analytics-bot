@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Отчеты клиентам{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Отчеты клиентам</h1>
+  <a href="/client-reports/export?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="btn btn-primary">
+    Скачать таблицы
+  </a>
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card filters-card">
+  <form method="get" class="filters-form">
+    <label>Дата с
+      <input type="date" name="date_from" value="{{ date_from.isoformat() }}" required>
+    </label>
+    <label>Дата по
+      <input type="date" name="date_to" value="{{ date_to.isoformat() }}" required>
+    </label>
+    <button type="submit" class="btn btn-primary">Показать</button>
+  </form>
+  <div class="quick-filters">
+    <span class="muted">Быстрый выбор:</span>
+    <a href="/client-reports?{{ preset_month }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
+    <a href="/client-reports?{{ preset_prev_month }}" class="btn btn-secondary btn-sm">Прошлый месяц</a>
+  </div>
+  <p class="muted">
+    Конверсии — кампании «КОНВЕРСИИ» / «Конверс»; имидж — «ИМИДЖ»; приложения — «ПРИЛ» / «ПРИЛОЖ».
+  </p>
+</div>
+
+{% for report in reports %}
+<section class="client-report-section">
+  <h2>{{ report.client_name }}</h2>
+  {% if report.error %}
+  <p class="alert alert-error">{{ report.error }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="client-report-table">
+      <thead>
+        <tr>
+          <th rowspan="2" class="cr-date">Дата</th>
+          <th colspan="3" class="cr-conv">реклама на конверсии</th>
+          <th colspan="4" class="cr-image">реклама на имидж</th>
+          <th colspan="4" class="cr-app">реклама приложения</th>
+          <th rowspan="2" class="cr-total">расход общий</th>
+        </tr>
+        <tr>
+          <th class="cr-conv">расход</th>
+          <th class="cr-conv">конверсии</th>
+          <th class="cr-conv">цена конверсии</th>
+          <th class="cr-image">расход</th>
+          <th class="cr-image">показы</th>
+          <th class="cr-image">CPM (стоимость 1000 показов)</th>
+          <th class="cr-image">конверсии</th>
+          <th class="cr-app">расход</th>
+          <th class="cr-app">установка</th>
+          <th class="cr-app">цена установки</th>
+          <th class="cr-app">доход</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.week_rows %}
+        <tr>
+          <td>{{ row.period }}</td>
+          <td>{{ row.conv_spend }}</td>
+          <td>{{ row.conv_count }}</td>
+          <td class="{% if row.conv_price == '#DIV/0!' %}cr-div{% endif %}">{{ row.conv_price }}</td>
+          <td>{{ row.image_spend }}</td>
+          <td>{{ row.image_impressions }}</td>
+          <td class="{% if row.image_cpm == '#DIV/0!' %}cr-div{% endif %}">{{ row.image_cpm }}</td>
+          <td>{{ row.image_conversions }}</td>
+          <td>{{ row.app_spend }}</td>
+          <td>{{ row.app_installs }}</td>
+          <td class="{% if row.app_cpi == '#DIV/0!' %}cr-div{% endif %}">{{ row.app_cpi }}</td>
+          <td>{{ row.app_revenue }}</td>
+          <td>{{ row.total_spend }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="cr-summary-row">
+          <td>{{ report.total_label }}</td>
+          <td>{{ report.total.conv_spend }}</td>
+          <td>{{ report.total.conv_count }}</td>
+          <td class="{% if report.total.conv_price == '#DIV/0!' %}cr-div{% endif %}">{{ report.total.conv_price }}</td>
+          <td>{{ report.total.image_spend }}</td>
+          <td>{{ report.total.image_impressions }}</td>
+          <td class="{% if report.total.image_cpm == '#DIV/0!' %}cr-div{% endif %}">{{ report.total.image_cpm }}</td>
+          <td>{{ report.total.image_conversions }}</td>
+          <td>{{ report.total.app_spend }}</td>
+          <td>{{ report.total.app_installs }}</td>
+          <td class="{% if report.total.app_cpi == '#DIV/0!' %}cr-div{% endif %}">{{ report.total.app_cpi }}</td>
+          <td>{{ report.total.app_revenue }}</td>
+          <td>{{ report.total.total_spend }}</td>
+        </tr>
+        <tr class="cr-plan-row">
+          <td colspan="10"></td>
+          <td class="cr-plan-label">ПЛАН</td>
+          <td></td>
+          <td>{{ report.plan_budget }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% else %}
+<p class="muted">Нет активных клиентов</p>
+{% endfor %}
+{% endblock %}

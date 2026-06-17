@@ -566,6 +566,67 @@ code {
   margin-left: 0.75rem;
 }
 
+.client-report-section {
+  margin-top: 2rem;
+}
+
+.client-report-section h2 {
+  margin-bottom: 0.75rem;
+  font-size: 1.15rem;
+}
+
+.client-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.client-report-table th,
+.client-report-table td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.55rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.client-report-table th.cr-date {
+  background: #f4b084;
+  color: #1a1a1a;
+}
+
+.client-report-table th.cr-conv {
+  background: #6aa84f;
+  color: #1a1a1a;
+}
+
+.client-report-table th.cr-image {
+  background: #f8cbad;
+  color: #1a1a1a;
+}
+
+.client-report-table th.cr-app {
+  background: #f1c232;
+  color: #1a1a1a;
+}
+
+.client-report-table th.cr-total {
+  background: #999;
+  color: #fff;
+}
+
+.client-report-table .cr-summary-row td {
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.client-report-table .cr-plan-label {
+  font-weight: 700;
+}
+
+.client-report-table .cr-div {
+  color: #ff7a66;
+}
+
 @media (max-width: 640px) {
   .container { padding: 1rem; }
   .nav { padding: 0.75rem 1rem; flex-direction: column; gap: 0.75rem; }
