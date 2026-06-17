@@ -9,6 +9,7 @@ from src.config import Settings
 from src.db.models import Client
 from src.services.client_balances import ClientBalance, fetch_client_balances
 from src.services.cpa_style import cpa_highlight_class, weekly_budget
+from src.services.runtime_cache import get_or_set
 from src.vat import cost_with_vat
 from src.yandex_direct import (
     YandexDirectClient,
@@ -148,6 +149,27 @@ def fetch_analytics_table(
             )
             _mark_shown()
     return rows
+
+
+def fetch_analytics_table_cached(
+    db: Session,
+    settings: Settings,
+    date_from: date,
+    date_to: date,
+    active_only: bool = True,
+) -> list[AnalyticsRow]:
+    key = (
+        "analytics_table",
+        settings.yandex_token,
+        date_from.isoformat(),
+        date_to.isoformat(),
+        active_only,
+    )
+    return get_or_set(
+        key,
+        lambda: fetch_analytics_table(db, settings, date_from, date_to, active_only),
+        ttl_seconds=90,
+    )
 
 
 def _fetch_all_report_rows(api, date_from, date_to, goal_ids, attribution_model):

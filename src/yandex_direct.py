@@ -380,6 +380,49 @@ class YandexDirectClient:
             raise last_error
         raise MetrikaApiError("Не удалось авторизоваться в API Метрики.")
 
+    def fetch_rsya_placement_report(
+        self,
+        date_from: date,
+        date_to: date,
+        goal_ids: list[int],
+        attribution_model: str,
+    ) -> list[dict[str, str]]:
+        """Статистика по площадкам РСЯ (AD_NETWORK), как в Мастере отчётов."""
+        field_names = ["Placement", "Cost", "Clicks", "Impressions", "Conversions", "CostPerConversion"]
+        filters = [{"Field": "AdNetworkType", "Operator": "EQUALS", "Values": ["AD_NETWORK"]}]
+
+        if not goal_ids:
+            return self._fetch_report_ex(
+                date_from,
+                date_to,
+                [],
+                attribution_model,
+                report_type="CUSTOM_REPORT",
+                field_names=field_names,
+                filters=filters,
+                report_name_prefix="RsyaPlacements",
+            )
+
+        merged: dict[str, dict[str, str]] = {}
+        for chunk in _chunked(goal_ids, MAX_GOALS_PER_REQUEST):
+            rows = self._fetch_report_ex(
+                date_from,
+                date_to,
+                list(chunk),
+                attribution_model,
+                report_type="CUSTOM_REPORT",
+                field_names=field_names,
+                filters=filters,
+                report_name_prefix="RsyaPlacements",
+            )
+            for row in rows:
+                key = row.get("Placement", "").strip() or "—"
+                if key not in merged:
+                    merged[key] = dict(row)
+                else:
+                    _merge_conversion_columns(merged[key], row, list(chunk))
+        return list(merged.values())
+
     def _fetch_report(
         self,
         date_from: date,
@@ -388,18 +431,41 @@ class YandexDirectClient:
         attribution_model: str,
     ) -> list[dict[str, str]]:
         field_names = list(BASE_REPORT_FIELDS)
-        # В FieldNames — только базовые имена; API сам развернёт их в
-        # Conversions_<goalId>_<model> в заголовках TSV при указании Goals.
         field_names.extend(["Conversions", "CostPerConversion"])
+        return self._fetch_report_ex(
+            date_from,
+            date_to,
+            goal_ids,
+            attribution_model,
+            report_type="CAMPAIGN_PERFORMANCE_REPORT",
+            field_names=field_names,
+            report_name_prefix="DailyAnalytics",
+        )
+
+    def _fetch_report_ex(
+        self,
+        date_from: date,
+        date_to: date,
+        goal_ids: list[int],
+        attribution_model: str,
+        *,
+        report_type: str,
+        field_names: list[str],
+        filters: list[dict] | None = None,
+        report_name_prefix: str = "Report",
+    ) -> list[dict[str, str]]:
+        selection: dict = {
+            "DateFrom": date_from.isoformat(),
+            "DateTo": date_to.isoformat(),
+        }
+        if filters:
+            selection["Filter"] = filters
 
         params: dict = {
-            "SelectionCriteria": {
-                "DateFrom": date_from.isoformat(),
-                "DateTo": date_to.isoformat(),
-            },
+            "SelectionCriteria": selection,
             "FieldNames": field_names,
-            "ReportName": f"DailyAnalytics_{date_from}_{date_to}_{int(time.time())}",
-            "ReportType": "CAMPAIGN_PERFORMANCE_REPORT",
+            "ReportName": f"{report_name_prefix}_{date_from}_{date_to}_{int(time.time())}",
+            "ReportType": report_type,
             "DateRangeType": "CUSTOM_DATE",
             "Format": "TSV",
             "IncludeVAT": "NO",
@@ -419,7 +485,7 @@ class YandexDirectClient:
                     REPORTS_URL,
                     data=payload.encode("utf-8"),
                     headers=headers,
-                    timeout=120,
+                    timeout=180,
                 )
             except RequestsConnectionError as exc:
                 raise YandexDirectError("Не удалось подключиться к API Яндекс.Директ") from exc

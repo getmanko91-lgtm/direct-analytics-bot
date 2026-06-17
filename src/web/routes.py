@@ -12,12 +12,16 @@ from src.config import Settings
 from src.db.database import get_db
 from src.db.models import Client, User
 from src.services.analytics_export import build_analytics_xlsx, export_filename
-from src.services.analytics_table import fetch_analytics_table, format_analytics_telegram
+from src.services.analytics_table import (
+    fetch_analytics_table_cached,
+    format_analytics_telegram,
+)
 from src.services.client_balances import fetch_client_balances, format_balance
-from src.services.client_campaigns import fetch_client_campaign_report
+from src.services.client_campaigns import fetch_client_campaign_report_cached
 from src.services.budget_pacing import build_budget_pacing
 from src.services.cpa_style import cpa_chart_color, cpa_highlight_class
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
+from src.services.rsya_placements import fetch_rsya_zero_conversion_placements_cached
 from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
 from src.telegram_notifier import TelegramError, TelegramNotifier
 from src.web.dependencies import TEMPLATES_DIR, get_app_settings, get_current_user
@@ -48,6 +52,18 @@ def _period_from_request(request: Request) -> tuple[date, date]:
     if date_to < date_from:
         date_from, date_to = date_to, date_from
     return date_from, date_to
+
+
+def _placement_filters_from_request(request: Request) -> tuple[int, float]:
+    try:
+        min_clicks = int(request.query_params.get("min_clicks", "1"))
+    except ValueError:
+        min_clicks = 1
+    try:
+        min_spend = float(request.query_params.get("min_spend", "0") or "0")
+    except ValueError:
+        min_spend = 0.0
+    return max(min_clicks, 0), max(min_spend, 0.0)
 
 
 def _fmt_money(value: float) -> str:
@@ -101,7 +117,7 @@ def analytics_page(
     today = date.today()
     yesterday = today - timedelta(days=1)
 
-    rows = fetch_analytics_table(db, settings, date_from, date_to)
+    rows = fetch_analytics_table_cached(db, settings, date_from, date_to)
     display_rows = [
         {
             "client_id": r.client_id,
@@ -157,7 +173,7 @@ def analytics_export(
 ):
     settings = get_settings_dep(request)
     date_from, date_to = _period_from_request(request)
-    rows = fetch_analytics_table(db, settings, date_from, date_to)
+    rows = fetch_analytics_table_cached(db, settings, date_from, date_to)
     cpa_classes = [cpa_highlight_class(r.cpa) if not r.error else "" for r in rows]
     content = build_analytics_xlsx(
         rows,
@@ -190,7 +206,7 @@ def analytics_send_telegram(
 
     chat_id = get_setting(db, "telegram_chat_id") or settings.telegram_chat_id
     try:
-        rows = fetch_analytics_table(db, settings, d_from, d_to)
+        rows = fetch_analytics_table_cached(db, settings, d_from, d_to)
         message = format_analytics_telegram(rows, d_from, d_to)
         TelegramNotifier(settings.telegram_bot_token, chat_id, proxy=settings.telegram_proxy).send_message(message)
         return RedirectResponse(
@@ -249,12 +265,23 @@ def client_analytics_page(
 ):
     settings = get_settings_dep(request)
     date_from, date_to = _period_from_request(request)
+    min_clicks, min_spend = _placement_filters_from_request(request)
     today = date.today()
     yesterday = today - timedelta(days=1)
 
-    report = fetch_client_campaign_report(db, settings, client_id, date_from, date_to)
+    report = fetch_client_campaign_report_cached(db, settings, client_id, date_from, date_to)
     if not report:
         return RedirectResponse("/clients", status_code=303)
+
+    placements_report = fetch_rsya_zero_conversion_placements_cached(
+        db,
+        settings,
+        client_id,
+        date_from,
+        date_to,
+        min_clicks=min_clicks,
+        min_spend=min_spend,
+    )
 
     def _fmt_conv(value: float) -> str:
         if value == int(value):
@@ -297,6 +324,29 @@ def client_analytics_page(
         "none": "Бюджет не задан",
     }
 
+    display_placements = []
+    placement_names: list[str] = []
+    placements_error = None
+    wasted_spend = "—"
+    if placements_report:
+        placements_error = placements_report.error
+        wasted_spend = _fmt_money(placements_report.total_wasted_spend)
+        for row in placements_report.placements:
+            display_placements.append(
+                {
+                    "placement": row.placement,
+                    "spend": _fmt_money(row.spend),
+                    "impressions": _fmt_int(row.impressions),
+                    "clicks": _fmt_int(row.clicks),
+                }
+            )
+            placement_names.append(row.placement)
+
+    filter_query = (
+        f"date_from={date_from.isoformat()}&date_to={date_to.isoformat()}"
+        f"&min_clicks={min_clicks}&min_spend={min_spend}"
+    )
+
     return templates.TemplateResponse(
         request,
         "clients/analytics.html",
@@ -326,6 +376,14 @@ def client_analytics_page(
             "preset_yesterday": f"date_from={yesterday.isoformat()}&date_to={yesterday.isoformat()}",
             "preset_7days": f"date_from={(today - timedelta(days=7)).isoformat()}&date_to={yesterday.isoformat()}",
             "preset_month": f"date_from={today.replace(day=1).isoformat()}&date_to={yesterday.isoformat()}",
+            "placements": display_placements,
+            "placement_names_text": "\n".join(placement_names),
+            "placements_count": len(display_placements),
+            "placements_wasted_spend": wasted_spend,
+            "placements_error": placements_error,
+            "min_clicks": min_clicks,
+            "min_spend": min_spend,
+            "filter_query": filter_query,
         },
     )
 

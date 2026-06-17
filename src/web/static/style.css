@@ -530,6 +530,42 @@ code {
   position: relative;
 }
 
+.placements-card {
+  margin-top: 1.5rem;
+}
+
+.placements-table td {
+  vertical-align: top;
+}
+
+.placement-name {
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.placement-list {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.copy-list-label {
+  display: block;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.copy-status {
+  margin-left: 0.75rem;
+}
+
 @media (max-width: 640px) {
   .container { padding: 1rem; }
   .nav { padding: 0.75rem 1rem; flex-direction: column; gap: 0.75rem; }

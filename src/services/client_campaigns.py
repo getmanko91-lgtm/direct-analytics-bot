@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from src.config import Settings
 from src.db.models import Client
 from src.services.cpa_style import cpa_highlight_class, weekly_budget
+from src.services.runtime_cache import get_or_set
 from src.yandex_direct import DailyStats, YandexDirectClient
 
 
@@ -96,6 +97,27 @@ def fetch_client_campaign_report(
             campaigns=(),
             error=str(exc)[:300],
         )
+
+
+def fetch_client_campaign_report_cached(
+    db: Session,
+    settings: Settings,
+    client_id: int,
+    date_from: date,
+    date_to: date,
+) -> ClientCampaignReport | None:
+    key = (
+        "client_campaign_report",
+        settings.yandex_token,
+        client_id,
+        date_from.isoformat(),
+        date_to.isoformat(),
+    )
+    return get_or_set(
+        key,
+        lambda: fetch_client_campaign_report(db, settings, client_id, date_from, date_to),
+        ttl_seconds=90,
+    )
 
 
 def _aggregate_campaigns(daily: dict[date, DailyStats]) -> list[ClientCampaignRow]:

@@ -24,13 +24,19 @@
     <label>Дата по
       <input type="date" name="date_to" value="{{ date_to.isoformat() }}" required>
     </label>
+    <label>Мин. кликов (РСЯ)
+      <input type="number" name="min_clicks" value="{{ min_clicks }}" min="0" step="1">
+    </label>
+    <label>Мин. расход, ₽ (РСЯ)
+      <input type="number" name="min_spend" value="{{ min_spend }}" min="0" step="1">
+    </label>
     <button type="submit" class="btn btn-primary">Показать</button>
   </form>
   <div class="quick-filters">
     <span class="muted">Быстрый выбор:</span>
-    <a href="?{{ preset_yesterday }}" class="btn btn-secondary btn-sm">Вчера</a>
-    <a href="?{{ preset_7days }}" class="btn btn-secondary btn-sm">7 дней</a>
-    <a href="?{{ preset_month }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
+    <a href="?{{ preset_yesterday }}&min_clicks={{ min_clicks }}&min_spend={{ min_spend }}" class="btn btn-secondary btn-sm">Вчера</a>
+    <a href="?{{ preset_7days }}&min_clicks={{ min_clicks }}&min_spend={{ min_spend }}" class="btn btn-secondary btn-sm">7 дней</a>
+    <a href="?{{ preset_month }}&min_clicks={{ min_clicks }}&min_spend={{ min_spend }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
   </div>
 </div>
 
@@ -126,6 +132,57 @@
   </table>
 </div>
 
+<div class="card placements-card">
+  <div class="budget-pacing-header">
+    <div>
+      <h2 class="chart-title">Площадки РСЯ без конверсий</h2>
+      <p class="muted">Как в Мастере отчётов: тип «Произвольный», срез «Площадка», фильтр «Тип площадки = РСЯ». Конверсии — по выбранным целям клиента, модель атрибуции из настроек.</p>
+    </div>
+    {% if placements_count > 0 %}
+    <span class="pace-badge pace-over">Расход впустую: {{ placements_wasted_spend }} ₽</span>
+    {% endif %}
+  </div>
+
+  {% if placements_error %}
+  <div class="alert alert-warning">{{ placements_error }}</div>
+  {% endif %}
+
+  {% if placements %}
+  <p class="muted">Найдено площадок: {{ placements_count }}. Скопируйте список и добавьте в исключения в Директе (кампания → РСЯ → Запрет показов).</p>
+  <div class="table-wrap">
+    <table class="table analytics-table placements-table">
+      <thead>
+        <tr>
+          <th>Площадка</th>
+          <th>Расход, ₽</th>
+          <th>Показы</th>
+          <th>Клики</th>
+          <th>Конверсии</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in placements %}
+        <tr>
+          <td><code class="placement-name">{{ row.placement }}</code></td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.impressions }}</td>
+          <td>{{ row.clicks }}</td>
+          <td>0</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <label class="copy-list-label">Список для исключений (по одной площадке на строку)
+    <textarea id="placementList" class="placement-list" readonly rows="8">{{ placement_names_text }}</textarea>
+  </label>
+  <button type="button" class="btn btn-secondary" onclick="copyPlacements()">Скопировать список</button>
+  <span id="copyStatus" class="muted copy-status"></span>
+  {% elif not placements_error %}
+  <p class="muted">За выбранный период нет площадок РСЯ с нулём конверсий при заданных фильтрах (мин. кликов: {{ min_clicks }}, мин. расход: {{ min_spend }} ₽).</p>
+  {% endif %}
+</div>
+
 {% if chart_labels %}
 <script>
 (function () {
@@ -179,4 +236,17 @@
 })();
 </script>
 {% endif %}
+<script>
+function copyPlacements() {
+  const area = document.getElementById('placementList');
+  const status = document.getElementById('copyStatus');
+  if (!area) return;
+  area.select();
+  area.setSelectionRange(0, area.value.length);
+  const ok = document.execCommand('copy');
+  if (status) {
+    status.textContent = ok ? 'Скопировано' : 'Не удалось скопировать — выделите текст вручную';
+  }
+}
+</script>
 {% endblock %}
