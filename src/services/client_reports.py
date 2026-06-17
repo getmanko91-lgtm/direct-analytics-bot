@@ -7,27 +7,15 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.config import Settings
 from src.db.models import Client
+from src.services.direct_report_rows import CACHE_TTL_SECONDS, fetch_client_report_rows_cached
+from src.services.parallel_fetch import map_parallel
 from src.services.runtime_cache import get_or_set
 from src.vat import cost_with_vat
 from src.yandex_direct import (
-    MAX_GOALS_PER_REQUEST,
-    YandexDirectClient,
-    _chunked,
-    _merge_conversion_columns,
     _parse_date,
     _parse_float,
     conversions_for_goal,
 )
-
-CLIENT_REPORT_FIELDS = [
-    "Date",
-    "CampaignId",
-    "CampaignName",
-    "Impressions",
-    "Cost",
-    "Conversions",
-    "Revenue",
-]
 
 
 def client_report_category(campaign_name: str) -> str | None:
@@ -107,32 +95,39 @@ def fetch_client_reports(
     clients = query.all()
 
     weeks = iter_week_ranges(date_from, date_to)
-    result: list[ClientMonthlyReport] = []
 
-    for client in clients:
-        report = ClientMonthlyReport(
-            client_id=client.id,
-            client_name=client.name,
-            weeks=weeks,
-            week_metrics=[WeekMetrics() for _ in weeks],
-            plan_budget=client.monthly_budget or 0.0,
-        )
-        selected_goals = [g for g in client.goals if g.is_selected]
-        if not selected_goals:
-            report.error = "Не выбраны цели"
-            result.append(report)
-            continue
+    def _load_client(client: Client) -> ClientMonthlyReport:
+        return _client_report_for_client(client, weeks, settings, date_from, date_to)
 
-        goal_ids = [g.goal_id for g in selected_goals]
-        try:
-            api = YandexDirectClient(settings.yandex_token, client.yandex_login)
-            rows = _fetch_client_report_rows(api, date_from, date_to, goal_ids, client.attribution_model)
-            _aggregate_rows_into_report(report, rows, goal_ids, client.attribution_model)
-        except Exception as exc:
-            report.error = str(exc)[:300]
-        result.append(report)
+    return map_parallel(_load_client, clients)
 
-    return result
+
+def _client_report_for_client(
+    client: Client,
+    weeks: list[tuple[date, date]],
+    settings: Settings,
+    date_from: date,
+    date_to: date,
+) -> ClientMonthlyReport:
+    report = ClientMonthlyReport(
+        client_id=client.id,
+        client_name=client.name,
+        weeks=weeks,
+        week_metrics=[WeekMetrics() for _ in weeks],
+        plan_budget=client.monthly_budget or 0.0,
+    )
+    selected_goals = [g for g in client.goals if g.is_selected]
+    if not selected_goals:
+        report.error = "Не выбраны цели"
+        return report
+
+    goal_ids = [g.goal_id for g in selected_goals]
+    try:
+        rows = fetch_client_report_rows_cached(settings, client, date_from, date_to)
+        _aggregate_rows_into_report(report, rows, goal_ids, client.attribution_model)
+    except Exception as exc:
+        report.error = str(exc)[:300]
+    return report
 
 
 def fetch_client_reports_cached(
@@ -152,59 +147,8 @@ def fetch_client_reports_cached(
     return get_or_set(
         key,
         lambda: fetch_client_reports(db, settings, date_from, date_to, active_only),
-        ttl_seconds=90,
+        ttl_seconds=CACHE_TTL_SECONDS,
     )
-
-
-def _fetch_client_report_rows(
-    api: YandexDirectClient,
-    date_from: date,
-    date_to: date,
-    goal_ids: list[int],
-    attribution_model: str,
-) -> list[dict[str, str]]:
-    fields_with_revenue = list(CLIENT_REPORT_FIELDS)
-    fields_without_revenue = [f for f in fields_with_revenue if f != "Revenue"]
-
-    def fetch_chunk(chunk: list[int], field_names: list[str]) -> list[dict[str, str]]:
-        if not chunk:
-            return api._fetch_report_ex(
-                date_from,
-                date_to,
-                [],
-                attribution_model,
-                report_type="CAMPAIGN_PERFORMANCE_REPORT",
-                field_names=field_names,
-                report_name_prefix="ClientReport",
-            )
-        return api._fetch_report_ex(
-            date_from,
-            date_to,
-            chunk,
-            attribution_model,
-            report_type="CAMPAIGN_PERFORMANCE_REPORT",
-            field_names=field_names,
-            report_name_prefix="ClientReport",
-        )
-
-    def merge_chunks(field_names: list[str]) -> list[dict[str, str]]:
-        if not goal_ids:
-            return fetch_chunk([], field_names)
-
-        merged: dict[tuple[str, str], dict[str, str]] = {}
-        for chunk in _chunked(goal_ids, MAX_GOALS_PER_REQUEST):
-            for row in fetch_chunk(list(chunk), field_names):
-                key = (row.get("Date", ""), row.get("CampaignId", "") or row.get("CampaignName", "—"))
-                if key not in merged:
-                    merged[key] = dict(row)
-                else:
-                    _merge_conversion_columns(merged[key], row, list(chunk))
-        return list(merged.values())
-
-    try:
-        return merge_chunks(fields_with_revenue)
-    except Exception:
-        return merge_chunks(fields_without_revenue)
 
 
 def _aggregate_rows_into_report(

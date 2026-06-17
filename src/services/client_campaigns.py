@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from src.config import Settings
 from src.db.models import Client
 from src.services.cpa_style import cpa_highlight_class, weekly_budget
+from src.services.direct_report_rows import CACHE_TTL_SECONDS
 from src.services.runtime_cache import get_or_set
 from src.yandex_direct import DailyStats, YandexDirectClient
 
@@ -116,7 +117,7 @@ def fetch_client_campaign_report_cached(
     return get_or_set(
         key,
         lambda: fetch_client_campaign_report(db, settings, client_id, date_from, date_to),
-        ttl_seconds=90,
+        ttl_seconds=CACHE_TTL_SECONDS,
     )
 
 

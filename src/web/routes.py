@@ -17,14 +17,13 @@ from src.services.analytics_table import (
     format_analytics_telegram,
 )
 from src.services.client_balances import fetch_client_balances, format_balance
-from src.services.client_campaigns import fetch_client_campaign_report_cached
+from src.services.client_analytics_bundle import fetch_client_analytics_bundle_cached
 from src.services.budget_pacing import build_budget_pacing
 from src.services.cpa_style import cpa_chart_color, cpa_highlight_class
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.client_reports import fetch_client_reports_cached, format_period, metrics_to_display
 from src.services.client_reports_export import build_client_reports_xlsx, export_filename as client_reports_export_filename
 from src.services.kpi_table import fetch_kpi_table_cached
-from src.services.rsya_placements import fetch_rsya_zero_conversion_placements_cached
 from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
 from src.telegram_notifier import TelegramError, TelegramNotifier
 from src.web.dependencies import TEMPLATES_DIR, get_app_settings, get_current_user
@@ -411,11 +410,7 @@ def client_analytics_page(
     today = date.today()
     yesterday = today - timedelta(days=1)
 
-    report = fetch_client_campaign_report_cached(db, settings, client_id, date_from, date_to)
-    if not report:
-        return RedirectResponse("/clients", status_code=303)
-
-    placements_report = fetch_rsya_zero_conversion_placements_cached(
+    bundle = fetch_client_analytics_bundle_cached(
         db,
         settings,
         client_id,
@@ -424,6 +419,11 @@ def client_analytics_page(
         min_clicks=min_clicks,
         min_spend=min_spend,
     )
+    if not bundle:
+        return RedirectResponse("/clients", status_code=303)
+
+    report = bundle.report
+    placements_report = bundle.placements
 
     def _fmt_conv(value: float) -> str:
         if value == int(value):

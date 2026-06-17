@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.config import Settings
 from src.db.models import Client
+from src.services.direct_report_rows import CACHE_TTL_SECONDS
 from src.services.runtime_cache import get_or_set
 from src.vat import cost_with_vat
 from src.yandex_direct import YandexDirectClient, conversions_for_goal, _parse_float, _parse_int
@@ -119,7 +120,7 @@ def fetch_rsya_zero_conversion_placements_cached(
             min_clicks=min_clicks,
             min_spend=min_spend,
         ),
-        ttl_seconds=120,
+        ttl_seconds=CACHE_TTL_SECONDS,
     )
 
 
