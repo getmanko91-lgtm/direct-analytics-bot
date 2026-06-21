@@ -221,14 +221,14 @@ def metrics_to_display(metrics: WeekMetrics, vat_rate: float) -> dict[str, str]:
     return {
         "conv_spend": format_money(conv_spend),
         "conv_count": format_number(metrics.conv_count),
-        "conv_price": format_ratio(metrics.conv_spend_raw, metrics.conv_count),
+        "conv_price": format_ratio(conv_spend, metrics.conv_count),
         "image_spend": format_money(image_spend),
         "image_impressions": format_number(metrics.image_impressions),
-        "image_cpm": format_ratio(metrics.image_spend_raw * 1000, metrics.image_impressions),
+        "image_cpm": format_ratio(image_spend * 1000, metrics.image_impressions),
         "image_conversions": format_number(metrics.image_conversions),
         "app_spend": format_money(app_spend),
         "app_installs": format_number(metrics.app_installs),
-        "app_cpi": format_ratio(metrics.app_spend_raw, metrics.app_installs),
+        "app_cpi": format_ratio(app_spend, metrics.app_installs),
         "app_revenue": format_money(app_revenue),
         "total_spend": format_money(total_spend),
     }

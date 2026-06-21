@@ -67,7 +67,7 @@ def build_analytics_xlsx(
     ws["A1"] = "Сводная аналитика Direct Nikitos Analytics"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = f"Период: {period}"
-    ws["A3"] = f"Расход с НДС {vat_percent}%. CPA без НДС (как в Директе)."
+    ws["A3"] = f"Расход и CPA с НДС {vat_percent}%."
 
     header_row = 5
     for col, title in enumerate(HEADERS, start=1):

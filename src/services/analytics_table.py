@@ -123,7 +123,7 @@ def _analytics_rows_for_client(
         rows: list[AnalyticsRow] = []
         for index, goal in enumerate(selected_goals):
             conv = conversions_by_goal.get(goal.goal_id, 0.0)
-            cpa = (cost_raw / conv) if conv > 0 else None
+            cpa = (spend / conv) if conv > 0 else None
             rows.append(
                 AnalyticsRow(
                     client_id=client.id,

@@ -145,7 +145,7 @@ def build_client_reports_xlsx(
     ws["A1"] = "Отчеты клиентам — Direct Nikitos Analytics"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = f"Период: {period}"
-    ws["A3"] = f"Расход с НДС {vat_percent}%. Цена конверсии / CPM / цена установки без НДС."
+    ws["A3"] = f"Расход с НДС {vat_percent}%. Цена конверсии / CPM / цена установки — с НДС."
 
     vat_rate = vat_percent / 100
     row = 5

@@ -696,13 +696,8 @@ def _row_to_campaign(
     avg_cpc_raw = _parse_float(row.get("AvgCpc", "0"))
     avg_cpc = cost_with_vat(avg_cpc_raw, vat_rate) if avg_cpc_raw else (cost / clicks if clicks else 0.0)
 
-    if goal_ids and len(goal_ids) == 1:
-        gid = goal_ids[0]
-        cpa = cost_per_conversion_for_goal(row, gid, attribution_model)
-        if cpa is None and conversions > 0:
-            cpa = cost_raw / conversions
-    elif conversions > 0:
-        cpa = cost_raw / conversions
+    if conversions > 0:
+        cpa = cost / conversions
     else:
         cpa = None
 

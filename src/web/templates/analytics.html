@@ -2,14 +2,15 @@
 {% from "macros/balance.html" import balance_badge %}
 {% block title %}Сводка{% endblock %}
 {% block content %}
-<div class="page-header">
+<div class="analytics-page">
+<div class="page-header page-header-compact">
   <h1>Сводная аналитика</h1>
   <div class="page-header-actions">
-    <a href="/analytics/export?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="btn btn-secondary">Скачать Excel</a>
+    <a href="/analytics/export?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="btn btn-secondary btn-sm">Excel</a>
     <form action="/analytics/send" method="post" class="inline">
       <input type="hidden" name="date_from" value="{{ date_from.isoformat() }}">
       <input type="hidden" name="date_to" value="{{ date_to.isoformat() }}">
-      <button type="submit" class="btn btn-primary">Отправить в Telegram</button>
+      <button type="submit" class="btn btn-primary btn-sm">Telegram</button>
     </form>
   </div>
 </div>
@@ -21,38 +22,37 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
-<div class="card filters-card">
-  <form method="get" class="filters-form">
+<div class="card filters-card filters-card-compact">
+  <form method="get" class="filters-form filters-form-compact">
     <label>Дата с
       <input type="date" name="date_from" value="{{ date_from.isoformat() }}" required>
     </label>
     <label>Дата по
       <input type="date" name="date_to" value="{{ date_to.isoformat() }}" required>
     </label>
-    <button type="submit" class="btn btn-primary">Показать</button>
+    <button type="submit" class="btn btn-primary btn-sm">Показать</button>
+    <div class="quick-filters quick-filters-inline">
+      <a href="/?{{ preset_yesterday }}" class="btn btn-secondary btn-sm">Вчера</a>
+      <a href="/?{{ preset_7days }}" class="btn btn-secondary btn-sm">7 дней</a>
+      <a href="/?{{ preset_month }}" class="btn btn-secondary btn-sm">Месяц</a>
+    </div>
   </form>
-  <div class="quick-filters">
-    <span class="muted">Быстрый выбор:</span>
-    <a href="/?{{ preset_yesterday }}" class="btn btn-secondary btn-sm">Вчера</a>
-    <a href="/?{{ preset_7days }}" class="btn btn-secondary btn-sm">7 дней</a>
-    <a href="/?{{ preset_month }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
-  </div>
-  <p class="muted">Расход с НДС {{ vat_percent }}%. CPA как в Директе (без НДС). Сравнение CPA — с периодом {{ compare_period }}. «Скачать Excel» — файл откроется в Excel или Google Таблицах (Файл → Импорт).</p>
+  <p class="muted filters-hint">CPA = расход / конверсии (с НДС {{ vat_percent }}%) · сравнение с {{ compare_period }}</p>
 </div>
 
 <div class="table-wrap">
-  <table class="table analytics-table">
+  <table class="table analytics-table analytics-table-compact">
     <thead>
       <tr>
         <th>Клиент</th>
-        <th>Бюджет, мес.</th>
-        <th>Расход, ₽</th>
+        <th>Бюджет</th>
+        <th>Расход</th>
         <th>Показы</th>
         <th>Клики</th>
-        <th>CPC, ₽</th>
+        <th>CPC</th>
         <th>Цель</th>
-        <th>Конверсии</th>
-        <th>CPA, ₽</th>
+        <th>Конв.</th>
+        <th>CPA</th>
       </tr>
     </thead>
     <tbody>
@@ -60,17 +60,17 @@
       <tr class="{% if row.error %}row-error{% endif %}">
         <td>
           {% if row.show_client_block %}
-          <a href="/clients/{{ row.client_id }}/analytics?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="client-link">
-            <strong>{{ row.client_name }}</strong>
-          </a>
-          <div>{{ balance_badge(row.balance_amount, row.balance_low, row.balance_error) }}</div>
+          <div class="client-cell">
+            <a href="/clients/{{ row.client_id }}/analytics?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="client-link">{{ row.client_name }}</a>
+            {{ balance_badge(row.balance_amount, row.balance_low, row.balance_error) }}
+          </div>
           {% endif %}
         </td>
         <td>
           {% if row.show_client_block %}
-          {{ row.monthly_budget }}
+          <span>{{ row.monthly_budget }}</span>
           {% if row.weekly_budget != '—' %}
-          <div class="budget-weekly muted">нед: {{ row.weekly_budget }} ₽</div>
+          <span class="budget-weekly muted">/ {{ row.weekly_budget }}</span>
           {% endif %}
           {% endif %}
         </td>
@@ -78,13 +78,10 @@
         <td>{% if row.show_client_block %}{{ row.impressions }}{% endif %}</td>
         <td>{% if row.show_client_block %}{{ row.clicks }}{% endif %}</td>
         <td>{% if row.show_client_block %}{{ row.cpc }}{% endif %}</td>
-        <td>{{ row.goal_name }}</td>
+        <td class="goal-cell" title="{{ row.goal_name }}">{{ row.goal_name }}</td>
         <td>{{ row.conversions }}</td>
-        <td class="{% if row.cpa_class %}{{ row.cpa_class }}{% endif %}">
-          {{ row.cpa }}
-          {% if row.cpa_compare %}
-          <div class="cpa-compare {{ row.cpa_compare_class }}">{{ row.cpa_compare }}</div>
-          {% endif %}
+        <td class="cpa-cell {% if row.cpa_class %}{{ row.cpa_class }}{% endif %}">
+          <span class="cpa-value">{{ row.cpa }}</span>{% if row.cpa_compare %}<span class="cpa-compare {{ row.cpa_compare_class }}" title="{{ row.cpa_compare_title }}">{{ row.cpa_compare }}</span>{% endif %}
         </td>
       </tr>
       {% else %}
@@ -94,5 +91,6 @@
       {% endfor %}
     </tbody>
   </table>
+</div>
 </div>
 {% endblock %}

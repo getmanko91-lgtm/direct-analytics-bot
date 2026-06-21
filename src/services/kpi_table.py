@@ -87,7 +87,7 @@ def _kpi_row_for_client(
         rows = fetch_campaign_performance_rows_cached(settings, client, date_from, date_to)
         spend_raw, conversions = _aggregate_kpi_campaigns(rows, goal_ids, client.attribution_model)
         spend = cost_with_vat(spend_raw, settings.vat_rate)
-        cpa = (spend_raw / conversions) if conversions > 0 else None
+        cpa = (spend / conversions) if conversions > 0 else None
         return KpiRow(
             client_id=client.id,
             client_name=client.name,
