@@ -31,6 +31,21 @@
   <p class="muted">Считаются кампании «КОНВЕР», «МК», «ЕПК», «ТМК». CPA = расход / конверсии (с НДС).</p>
 </div>
 
+<div class="summary-grid kpi-summary-grid">
+  <div class="summary-card">
+    <span class="summary-label">Расход по всем клиентам</span>
+    <strong class="summary-value">{{ summary.spend }} ₽</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Конверсии по всем клиентам</span>
+    <strong class="summary-value">{{ summary.conversions }}</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Стоимость конверсии по всем клиентам</span>
+    <strong class="summary-value {% if summary.cpa_class %}{{ summary.cpa_class }}{% endif %}">{{ summary.cpa }}{% if summary.cpa != '—' %} ₽{% endif %}</strong>
+  </div>
+</div>
+
 <div class="table-wrap">
   <table class="table analytics-table">
     <thead>

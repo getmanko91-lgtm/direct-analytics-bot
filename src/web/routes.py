@@ -228,6 +228,10 @@ def kpi_page(
     yesterday = today - timedelta(days=1)
 
     rows = fetch_kpi_table_cached(db, settings, date_from, date_to)
+    total_spend = sum(r.spend for r in rows if not r.error)
+    total_conversions = sum(r.conversions for r in rows if not r.error)
+    total_cpa = (total_spend / total_conversions) if total_conversions > 0 else None
+
     display_rows = [
         {
             "client_id": r.client_id,
@@ -252,6 +256,16 @@ def kpi_page(
         {
             "user": user,
             "rows": display_rows,
+            "summary": {
+                "spend": _fmt_money(total_spend),
+                "conversions": (
+                    str(int(total_conversions))
+                    if total_conversions == int(total_conversions)
+                    else f"{total_conversions:.2f}".replace(".", ",")
+                ),
+                "cpa": _fmt_money(total_cpa) if total_cpa is not None else "—",
+                "cpa_class": cpa_highlight_class(total_cpa),
+            },
             "date_from": date_from,
             "date_to": date_to,
             "message": request.query_params.get("message"),
