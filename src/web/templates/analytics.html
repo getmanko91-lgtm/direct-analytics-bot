@@ -10,7 +10,7 @@
     <form action="/analytics/send" method="post" class="inline">
       <input type="hidden" name="date_from" value="{{ date_from.isoformat() }}">
       <input type="hidden" name="date_to" value="{{ date_to.isoformat() }}">
-      <button type="submit" class="btn btn-primary btn-sm">Telegram</button>
+      <button type="submit" class="btn btn-primary btn-sm">Отправить в {{ report_send_label }}</button>
     </form>
   </div>
 </div>

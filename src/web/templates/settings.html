@@ -8,16 +8,27 @@
 {% endif %}
 
 <form method="post" class="form card">
+  <label>Куда отправлять отчёты
+    <select name="report_channel">
+      <option value="max" {% if report_channel == 'max' %}selected{% endif %}>MAX</option>
+      <option value="telegram" {% if report_channel == 'telegram' %}selected{% endif %}>Telegram</option>
+      <option value="both" {% if report_channel == 'both' %}selected{% endif %}>Telegram и MAX</option>
+    </select>
+  </label>
   <label>Общий Telegram chat_id
     <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}">
   </label>
+  <label>Общий MAX chat_id
+    <input type="text" name="max_chat_id" value="{{ max_chat_id }}">
+  </label>
+  <p class="muted form-hint">Токены ботов — в <code>.env</code>: <code>TELEGRAM_BOT_TOKEN</code>, <code>MAX_BOT_TOKEN</code>. Chat_id MAX — в документации dev.max.ru (раздел «Получение chat_id»).</p>
   <label>Время ежедневной отправки (HH:MM)
     <input type="time" name="report_time" value="{{ report_time }}">
   </label>
   <label>Часовой пояс
     <input type="text" name="timezone" value="{{ timezone }}">
   </label>
-  <p class="muted">OAuth-токен Директа и токен Telegram-бота задаются в файле <code>.env</code>. После изменения времени отправки перезапустите сервис.</p>
+  <p class="muted">OAuth-токен Директа задаётся в <code>.env</code>. После изменения времени отправки перезапустите сервис.</p>
   <button type="submit" class="btn btn-primary">Сохранить</button>
 </form>
 {% endblock %}

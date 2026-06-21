@@ -34,6 +34,7 @@ class Client(Base):
     yandex_login: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     metrika_counter_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     telegram_chat_id: Mapped[str] = mapped_column(String(64), default="")
+    max_chat_id: Mapped[str] = mapped_column(String(64), default="")
     spend_alert_threshold: Mapped[float] = mapped_column(Float, default=0.0)
     monthly_budget: Mapped[float] = mapped_column(Float, default=0.0)
     directologist: Mapped[str] = mapped_column(String(32), default="Ксюша")

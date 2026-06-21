@@ -4,7 +4,7 @@
 <div class="page-header">
   <h1>Превью отчёта: {{ client.name }}</h1>
   <form action="/clients/{{ client.id }}/send" method="post">
-    <button type="submit" class="btn btn-primary">Отправить в Telegram</button>
+    <button type="submit" class="btn btn-primary">Отправить в {{ report_send_label }}</button>
   </form>
 </div>
 

@@ -30,8 +30,10 @@ from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.client_reports import fetch_client_reports_cached, format_period, metrics_to_display
 from src.services.client_reports_export import build_client_reports_xlsx, export_filename as client_reports_export_filename
 from src.services.kpi_table import fetch_kpi_table_cached
+from src.services.message_delivery import ReportDeliveryError, deliver_report_message, effective_report_channel
 from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
-from src.telegram_notifier import TelegramError, TelegramNotifier
+from src.max_notifier import MaxError
+from src.telegram_notifier import TelegramError
 from src.web.dependencies import TEMPLATES_DIR, get_app_settings, get_current_user
 from src.web.urls import redirect_url, require_ascii_login
 
@@ -80,6 +82,15 @@ def _fmt_money(value: float) -> str:
 
 def _fmt_int(value: int) -> str:
     return f"{value:,}".replace(",", " ")
+
+
+def _report_send_label(db: Session, settings: Settings) -> str:
+    channel = effective_report_channel(db, settings)
+    return {
+        "telegram": "Telegram",
+        "max": "MAX",
+        "both": "Telegram + MAX",
+    }.get(channel, "мессенджер")
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -187,6 +198,7 @@ def analytics_page(
             "preset_7days": f"date_from={(today - timedelta(days=7)).isoformat()}&date_to={yesterday.isoformat()}",
             "preset_month": f"date_from={today.replace(day=1).isoformat()}&date_to={yesterday.isoformat()}",
             "compare_period": format_period_short(prev_from, prev_to),
+            "report_send_label": _report_send_label(db, settings),
         },
     )
 
@@ -370,7 +382,7 @@ def client_reports_export(
 
 
 @router.post("/analytics/send")
-def analytics_send_telegram(
+def analytics_send_report(
     request: Request,
     date_from: str = Form(...),
     date_to: str = Form(...),
@@ -383,16 +395,15 @@ def analytics_send_telegram(
     if d_to < d_from:
         d_from, d_to = d_to, d_from
 
-    chat_id = get_setting(db, "telegram_chat_id") or settings.telegram_chat_id
     try:
         rows = fetch_analytics_table_cached(db, settings, d_from, d_to)
         message = format_analytics_telegram(rows, d_from, d_to)
-        TelegramNotifier(settings.telegram_bot_token, chat_id, proxy=settings.telegram_proxy).send_message(message)
+        target = deliver_report_message(db, settings, message)
         return RedirectResponse(
-            redirect_url("/", date_from=d_from.isoformat(), date_to=d_to.isoformat(), message="Сводка отправлена в Telegram"),
+            redirect_url("/", date_from=d_from.isoformat(), date_to=d_to.isoformat(), message=f"Сводка отправлена в {target}"),
             status_code=303,
         )
-    except (TelegramError, Exception) as exc:
+    except (ReportDeliveryError, TelegramError, MaxError, Exception) as exc:
         return RedirectResponse(
             redirect_url("/", date_from=d_from.isoformat(), date_to=d_to.isoformat(), error=str(exc)[:400]),
             status_code=303,
@@ -584,6 +595,7 @@ def client_create(
     yandex_login: str = Form(...),
     metrika_counter_id: str = Form(""),
     telegram_chat_id: str = Form(""),
+    max_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
     monthly_budget: float = Form(0),
     directologist: str = Form("Ксюша"),
@@ -606,6 +618,7 @@ def client_create(
         yandex_login=yandex_login.strip(),
         metrika_counter_id=counter_id,
         telegram_chat_id=telegram_chat_id.strip(),
+        max_chat_id=max_chat_id.strip(),
         spend_alert_threshold=spend_alert_threshold,
         monthly_budget=max(monthly_budget, 0),
         directologist=directologist if directologist in {"Ксюша", "Лариса"} else "Ксюша",
@@ -650,6 +663,7 @@ def client_update(
     yandex_login: str = Form(...),
     metrika_counter_id: str = Form(""),
     telegram_chat_id: str = Form(""),
+    max_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
     monthly_budget: float = Form(0),
     directologist: str = Form("Ксюша"),
@@ -676,6 +690,7 @@ def client_update(
     client.name = name.strip()
     client.metrika_counter_id = int(metrika_counter_id) if metrika_counter_id.strip() else None
     client.telegram_chat_id = telegram_chat_id.strip()
+    client.max_chat_id = max_chat_id.strip()
     client.spend_alert_threshold = spend_alert_threshold
     client.monthly_budget = max(monthly_budget, 0)
     client.directologist = directologist if directologist in {"Ксюша", "Лариса"} else "Ксюша"
@@ -800,7 +815,13 @@ def client_preview(
     return templates.TemplateResponse(
         request,
         "clients/preview.html",
-        {"user": user, "client": client, "preview_text": preview_text, "error": error},
+        {
+            "user": user,
+            "client": client,
+            "preview_text": preview_text,
+            "error": error,
+            "report_send_label": _report_send_label(db, settings),
+        },
     )
 
 
@@ -815,15 +836,14 @@ def client_send_now(
     if not client:
         return RedirectResponse("/clients", status_code=303)
 
-    chat_id = client.telegram_chat_id or get_setting(db, "telegram_chat_id") or settings.telegram_chat_id
     try:
         message = run_client_report(db, settings, client)
-        TelegramNotifier(settings.telegram_bot_token, chat_id, proxy=settings.telegram_proxy).send_message(message)
+        target = deliver_report_message(db, settings, message, client=client)
         return RedirectResponse(
-            redirect_url(f"/clients/{client_id}/preview", message="Отправлено"),
+            redirect_url(f"/clients/{client_id}/preview", message=f"Отправлено в {target}"),
             status_code=303,
         )
-    except (TelegramError, Exception) as exc:
+    except (ReportDeliveryError, TelegramError, MaxError, Exception) as exc:
         return RedirectResponse(
             redirect_url(f"/clients/{client_id}/preview", error=str(exc)[:400]),
             status_code=303,
@@ -853,6 +873,8 @@ def settings_page(
         {
             "user": user,
             "telegram_chat_id": get_setting(db, "telegram_chat_id") or settings.telegram_chat_id,
+            "max_chat_id": get_setting(db, "max_chat_id") or settings.max_chat_id,
+            "report_channel": effective_report_channel(db, settings),
             "report_time": get_setting(db, "report_time") or settings.report_time,
             "timezone": get_setting(db, "timezone") or settings.timezone,
             "message": request.query_params.get("message"),
@@ -864,12 +886,19 @@ def settings_page(
 def settings_save(
     request: Request,
     telegram_chat_id: str = Form(""),
+    max_chat_id: str = Form(""),
+    report_channel: str = Form("telegram"),
     report_time: str = Form("09:00"),
     timezone: str = Form("Europe/Moscow"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    channel = report_channel.strip().lower()
+    if channel not in {"telegram", "max", "both"}:
+        channel = "telegram"
     set_setting(db, "telegram_chat_id", telegram_chat_id.strip())
+    set_setting(db, "max_chat_id", max_chat_id.strip())
+    set_setting(db, "report_channel", channel)
     set_setting(db, "report_time", report_time.strip())
     set_setting(db, "timezone", timezone.strip())
     return RedirectResponse(redirect_url("/settings", message="Настройки сохранены"), status_code=303)
