@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from src.config import Settings
 from src.db.models import Client
 from src.max_notifier import MaxError, MaxNotifier
-from src.services.report_runner import get_setting
+from src.services.app_settings import get_setting
 from src.telegram_notifier import TelegramError, TelegramNotifier
 
 logger = logging.getLogger(__name__)

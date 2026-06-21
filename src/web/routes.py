@@ -30,8 +30,9 @@ from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.client_reports import fetch_client_reports_cached, format_period, metrics_to_display
 from src.services.client_reports_export import build_client_reports_xlsx, export_filename as client_reports_export_filename
 from src.services.kpi_table import fetch_kpi_table_cached
+from src.services.app_settings import get_setting, set_setting
 from src.services.message_delivery import ReportDeliveryError, deliver_report_message, effective_report_channel
-from src.services.report_runner import get_setting, run_all_reports, run_client_report, set_setting
+from src.services.report_runner import run_all_reports, run_client_report
 from src.max_notifier import MaxError
 from src.telegram_notifier import TelegramError
 from src.web.dependencies import TEMPLATES_DIR, get_app_settings, get_current_user
