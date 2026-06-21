@@ -8,9 +8,9 @@
   <div class="page-header-actions">
     <a href="/analytics/export?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="btn btn-secondary btn-sm">Excel</a>
     <form action="/analytics/send" method="post" class="inline">
-      <input type="hidden" name="date_from" value="{{ date_from.isoformat() }}">
-      <input type="hidden" name="date_to" value="{{ date_to.isoformat() }}">
-      <button type="submit" class="btn btn-primary btn-sm">Отправить в {{ report_send_label }}</button>
+      <input type="hidden" name="page_date_from" value="{{ date_from.isoformat() }}">
+      <input type="hidden" name="page_date_to" value="{{ date_to.isoformat() }}">
+      <button type="submit" class="btn btn-primary btn-sm">Отправить в {{ report_send_label }} (вчера)</button>
     </form>
   </div>
 </div>

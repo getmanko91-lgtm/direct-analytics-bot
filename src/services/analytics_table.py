@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from src.config import Settings
 from src.db.models import Client
 from src.services.client_balances import ClientBalance, fetch_client_balances
+from src.services.budget_pacing import build_budget_pacing, period_day_count
 from src.services.cpa_style import weekly_budget
 from src.services.direct_report_rows import CACHE_TTL_SECONDS, fetch_campaign_performance_rows_cached
 from src.services.parallel_fetch import map_parallel
@@ -182,28 +183,130 @@ def _aggregate_rows(rows, goal_ids, attribution_model, vat_rate):
     return spend, impressions, clicks, conversions, cost_raw
 
 
+SUMMARY_BUDGET_ALERT_PERCENT = 20.0
+
+
+def _escape_html(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _fmt_money_summary(value: float) -> str:
+    return f"{value:,.2f}".replace(",", " ").replace(".", ",")
+
+
+def _fmt_int_summary(value: int) -> str:
+    return f"{value:,}".replace(",", " ")
+
+
+def _budget_status_emoji(deviation_percent: float | None, has_budget: bool) -> str:
+    if not has_budget or deviation_percent is None:
+        return ""
+    if deviation_percent > SUMMARY_BUDGET_ALERT_PERCENT:
+        return " 🔴"
+    if deviation_percent > 10:
+        return " 🟡"
+    if deviation_percent >= -10:
+        return " ✅"
+    return " 🔵"
+
+
 def format_analytics_telegram(rows: list[AnalyticsRow], date_from: date, date_to: date) -> str:
     period = date_from.strftime("%d.%m.%Y")
     if date_from != date_to:
         period += f" — {date_to.strftime('%d.%m.%Y')}"
 
-    lines = [f"📊 Сводка Direct Analytics", f"Период: {period}", ""]
-    for row in rows:
-        if row.error and row.show_client_block:
-            lines.append(f"• {row.client_name}: ⚠️ {row.error}")
+    days = period_day_count(date_from, date_to)
+    budget_alerts: list[str] = []
+    client_blocks: list[str] = []
+
+    index = 0
+    while index < len(rows):
+        row = rows[index]
+        if not row.show_client_block:
+            index += 1
             continue
-        if row.show_client_block:
-            spend_text = f"{row.spend:,.2f} ₽".replace(",", " ").replace(".", ",")
-            budget_text = f"{row.monthly_budget:,.0f} ₽".replace(",", " ") if row.monthly_budget else "—"
-            lines.append(
-                f"• {row.client_name}\n"
-                f"  Бюджет/мес: {budget_text} | Расход: {spend_text} | "
-                f"Показы: {row.impressions:,} | Клики: {row.clicks}".replace(",", " ")
-            )
+
         if row.error:
+            client_blocks.append(f"⚠️ <b>{_escape_html(row.client_name)}</b>\n   {_escape_html(row.error)}")
+            index += 1
             continue
-        if row.goal_name == "—":
-            continue
-        cpa_text = f"{row.cpa:,.2f} ₽".replace(",", " ").replace(".", ",") if row.cpa else "—"
-        lines.append(f"  ↳ {row.goal_name}: {row.conversions:g} конв. | CPA: {cpa_text}")
+
+        goals: list[AnalyticsRow] = []
+        next_index = index + 1
+        while next_index < len(rows) and not rows[next_index].show_client_block:
+            goal_row = rows[next_index]
+            if not goal_row.error and goal_row.goal_name != "—":
+                goals.append(goal_row)
+            next_index += 1
+
+        pacing = build_budget_pacing(row.monthly_budget, row.spend, date_from, date_to)
+        spend_text = _fmt_money_summary(row.spend)
+        status = _budget_status_emoji(pacing.deviation_percent, pacing.has_budget)
+
+        if pacing.has_budget:
+            if days == 1:
+                plan_label = f"план {_fmt_money_summary(pacing.daily_budget)} ₽/день"
+            else:
+                plan_label = f"план {_fmt_money_summary(pacing.expected_spend)} ₽ за {days} дн."
+            budget_line = f"💰 <b>{spend_text} ₽</b> · {plan_label}{status}"
+        else:
+            budget_line = f"💰 <b>{spend_text} ₽</b>"
+
+        if (
+            pacing.has_budget
+            and pacing.deviation_percent is not None
+            and pacing.deviation_percent > SUMMARY_BUDGET_ALERT_PERCENT
+        ):
+            if days == 1:
+                plan_text = f"{_fmt_money_summary(pacing.daily_budget)} ₽/день"
+            else:
+                plan_text = f"{_fmt_money_summary(pacing.expected_spend)} ₽ за {days} дн."
+            deviation = f"+{pacing.deviation_percent:.0f}%"
+            budget_alerts.append(
+                f"• <b>{_escape_html(row.client_name)}</b>: "
+                f"расход {spend_text} ₽ при {plan_text} ({deviation})"
+            )
+
+        block_lines = [
+            f"<b>{_escape_html(row.client_name)}</b>",
+            budget_line,
+            f"👁 {_fmt_int_summary(row.impressions)} · 👆 {_fmt_int_summary(row.clicks)} кл.",
+        ]
+        if row.monthly_budget > 0:
+            block_lines.append(
+                f"📋 бюджет/мес {_fmt_money_summary(row.monthly_budget)} ₽ · "
+                f"нед {_fmt_money_summary(row.weekly_budget)} ₽"
+            )
+        for goal in goals:
+            cpa_text = _fmt_money_summary(goal.cpa) if goal.cpa is not None else "—"
+            conv_text = f"{goal.conversions:g}".replace(".", ",")
+            block_lines.append(
+                f"   ↳ {_escape_html(goal.goal_name)}: {conv_text} конв. · CPA {cpa_text} ₽"
+            )
+
+        client_blocks.append("\n".join(block_lines))
+        index = next_index
+
+    lines = [
+        "📊 <b>Сводка Direct Nikitos Analytics</b>",
+        f"📅 {period}",
+    ]
+
+    if budget_alerts:
+        lines.extend(
+            [
+                "",
+                f"🚨 <b>Превышение бюджета (&gt;{int(SUMMARY_BUDGET_ALERT_PERCENT)}%)</b>",
+                *budget_alerts,
+            ]
+        )
+
+    if client_blocks:
+        lines.extend(["", "─────────────────", ""])
+        lines.append("\n\n".join(client_blocks))
+
+    if not client_blocks and not budget_alerts:
+        lines.append("")
+        lines.append("Нет данных по клиентам.")
+
     return "\n".join(lines)

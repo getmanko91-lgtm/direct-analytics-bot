@@ -385,28 +385,37 @@ def client_reports_export(
 @router.post("/analytics/send")
 def analytics_send_report(
     request: Request,
-    date_from: str = Form(...),
-    date_to: str = Form(...),
+    page_date_from: str = Form(""),
+    page_date_to: str = Form(""),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_app_settings),
 ):
-    d_from = _parse_date(date_from, date.today() - timedelta(days=1))
-    d_to = _parse_date(date_to, d_from)
-    if d_to < d_from:
-        d_from, d_to = d_to, d_from
+    yesterday = date.today() - timedelta(days=1)
+    view_from = _parse_date(page_date_from, yesterday)
+    view_to = _parse_date(page_date_to, view_from)
 
     try:
-        rows = fetch_analytics_table_cached(db, settings, d_from, d_to)
-        message = format_analytics_telegram(rows, d_from, d_to)
+        rows = fetch_analytics_table_cached(db, settings, yesterday, yesterday)
+        message = format_analytics_telegram(rows, yesterday, yesterday)
         target = deliver_report_message(db, settings, message)
         return RedirectResponse(
-            redirect_url("/", date_from=d_from.isoformat(), date_to=d_to.isoformat(), message=f"Сводка отправлена в {target}"),
+            redirect_url(
+                "/",
+                date_from=view_from.isoformat(),
+                date_to=view_to.isoformat(),
+                message=f"Сводка за вчера отправлена в {target}",
+            ),
             status_code=303,
         )
     except (ReportDeliveryError, TelegramError, MaxError, Exception) as exc:
         return RedirectResponse(
-            redirect_url("/", date_from=d_from.isoformat(), date_to=d_to.isoformat(), error=str(exc)[:400]),
+            redirect_url(
+                "/",
+                date_from=view_from.isoformat(),
+                date_to=view_to.isoformat(),
+                error=str(exc)[:400],
+            ),
             status_code=303,
         )
 
