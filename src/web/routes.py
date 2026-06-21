@@ -136,7 +136,7 @@ def analytics_page(
 
     display_rows = []
     for r in rows:
-        cpa_compare, cpa_compare_class = cpa_compare_display(
+        cpa_compare, cpa_compare_class, cpa_compare_title = cpa_compare_display(
             r.cpa,
             prev_cpa_by_goal.get((r.client_id, r.goal_id)),
             fmt_money=_fmt_money,
@@ -163,6 +163,7 @@ def analytics_page(
             "cpa_class": cpa_highlight_class(r.cpa) if not r.error else "",
             "cpa_compare": cpa_compare,
             "cpa_compare_class": cpa_compare_class,
+            "cpa_compare_title": cpa_compare_title,
             "error": r.error,
             "show_client_block": r.show_client_block,
             "balance_amount": format_balance(r.balance.amount) if r.balance and r.balance.amount is not None else None,

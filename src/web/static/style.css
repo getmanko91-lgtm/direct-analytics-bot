@@ -407,10 +407,10 @@ code {
 }
 
 .cpa-compare {
-  font-size: 0.75rem;
-  font-weight: 500;
-  margin-top: 0.2rem;
-  line-height: 1.2;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-left: 0.35rem;
+  opacity: 0.95;
 }
 
 .cpa-compare-good {
@@ -423,6 +423,107 @@ code {
 
 .cpa-compare-neutral {
   color: var(--muted);
+}
+
+/* Компактная сводка */
+.analytics-page .page-header-compact {
+  margin-bottom: 0.75rem;
+}
+
+.analytics-page h1 {
+  font-size: 1.35rem;
+  margin: 0;
+}
+
+.analytics-page .filters-card-compact {
+  margin-bottom: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+
+.analytics-page .filters-form-compact {
+  margin-bottom: 0.35rem;
+  gap: 0.6rem;
+}
+
+.analytics-page .filters-form-compact label {
+  font-size: 0.8rem;
+}
+
+.analytics-page .filters-form-compact input[type="date"] {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.analytics-page .quick-filters-inline {
+  margin: 0;
+  gap: 0.35rem;
+}
+
+.analytics-page .filters-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.analytics-table-compact th,
+.analytics-table-compact td {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  vertical-align: middle;
+}
+
+.analytics-table-compact th {
+  font-size: 0.75rem;
+  padding: 0.4rem 0.55rem;
+}
+
+.analytics-table-compact td.cpa-high,
+.analytics-table-compact td.cpa-medium,
+.analytics-table-compact td.cpa-low {
+  font-weight: 600;
+}
+
+.analytics-table-compact .cpa-cell {
+  white-space: nowrap;
+}
+
+.analytics-table-compact .cpa-value {
+  font-weight: 600;
+}
+
+.analytics-table-compact .goal-cell {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-page .client-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  max-width: 14rem;
+}
+
+.analytics-page .client-cell .client-link {
+  font-weight: 600;
+}
+
+.analytics-page .balance-indicator {
+  font-size: 0.7rem;
+  margin-top: 0;
+}
+
+.analytics-page .balance-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.analytics-page .budget-weekly {
+  font-size: 0.7rem;
+  margin-top: 0;
 }
 
 .budget-pacing-card {

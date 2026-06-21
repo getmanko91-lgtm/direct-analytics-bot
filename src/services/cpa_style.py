@@ -59,19 +59,20 @@ def cpa_compare_display(
     previous: float | None,
     *,
     fmt_money: Callable[[float], str],
-) -> tuple[str, str]:
-    """Текст сравнения CPA и CSS-класс (ниже CPA — лучше)."""
+) -> tuple[str, str, str]:
+    """Короткий текст сравнения CPA, CSS-класс и подсказка (ниже CPA — лучше)."""
     if current is None or previous is None or previous <= 0:
-        return "", ""
+        return "", "", ""
 
     pct = (current - previous) / previous * 100
     prev_text = fmt_money(previous)
+    title = f"Было {prev_text} ₽"
 
     if abs(pct) < 0.5:
-        return f"как было ({prev_text})", "cpa-compare-neutral"
+        return "=", "cpa-compare-neutral", title
 
     if pct < 0:
-        return f"▼ {abs(pct):.0f}% (было {prev_text})", "cpa-compare-good"
+        return f"▼{abs(pct):.0f}%", "cpa-compare-good", title
 
-    return f"▲ +{pct:.0f}% (было {prev_text})", "cpa-compare-bad"
+    return f"▲+{pct:.0f}%", "cpa-compare-bad", title
 
