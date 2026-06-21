@@ -15,20 +15,29 @@
       <option value="both" {% if report_channel == 'both' %}selected{% endif %}>Telegram и MAX</option>
     </select>
   </label>
-  <label>Общий Telegram chat_id
-    <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}">
+
+  <h2 class="settings-section-title">MAX</h2>
+  <label>Токен бота MAX
+    <input type="password" name="max_bot_token" autocomplete="off" placeholder="{% if max_bot_token_configured %}Токен задан — вставьте новый, чтобы заменить{% else %}Вставьте токен с dev.max.ru{% endif %}">
   </label>
   <label>Общий MAX chat_id
     <input type="text" name="max_chat_id" value="{{ max_chat_id }}">
   </label>
-  <p class="muted form-hint">Токены ботов — в <code>.env</code>: <code>TELEGRAM_BOT_TOKEN</code>, <code>MAX_BOT_TOKEN</code>. Chat_id MAX — в документации dev.max.ru (раздел «Получение chat_id»).</p>
+  <p class="muted form-hint">Токен и chat_id можно указать здесь. Chat_id — в документации dev.max.ru.</p>
+
+  <h2 class="settings-section-title">Telegram</h2>
+  <label>Общий Telegram chat_id
+    <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}">
+  </label>
+  <p class="muted form-hint">Токен Telegram-бота — в <code>.env</code> (<code>TELEGRAM_BOT_TOKEN</code>).</p>
+
   <label>Время ежедневной отправки (HH:MM)
     <input type="time" name="report_time" value="{{ report_time }}">
   </label>
   <label>Часовой пояс
     <input type="text" name="timezone" value="{{ timezone }}">
   </label>
-  <p class="muted">OAuth-токен Директа задаётся в <code>.env</code>. После изменения времени отправки перезапустите сервис.</p>
+  <p class="muted">OAuth-токен Директа — в <code>.env</code>. После изменения времени отправки перезапустите сервис.</p>
   <button type="submit" class="btn btn-primary">Сохранить</button>
 </form>
 {% endblock %}

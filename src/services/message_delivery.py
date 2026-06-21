@@ -46,6 +46,10 @@ def resolve_max_chat_id(
     return (get_setting(db, "max_chat_id") or settings.max_chat_id or "").strip()
 
 
+def resolve_max_bot_token(db: Session, settings: Settings) -> str:
+    return (get_setting(db, "max_bot_token") or settings.max_bot_token or "").strip()
+
+
 def deliver_report_message(
     db: Session,
     settings: Settings,
@@ -77,15 +81,16 @@ def deliver_report_message(
                     errors.append(f"Telegram: {exc}")
 
     if channel in ("max", "both"):
-        if not settings.max_bot_token:
-            errors.append("MAX: не задан MAX_BOT_TOKEN в .env")
+        max_token = resolve_max_bot_token(db, settings)
+        if not max_token:
+            errors.append("MAX: не задан токен бота (Настройки или MAX_BOT_TOKEN в .env)")
         else:
             chat_id = resolve_max_chat_id(db, settings, client)
             if not chat_id:
                 errors.append("MAX: не указан chat_id")
             else:
                 try:
-                    MaxNotifier(settings.max_bot_token, chat_id).send_message(message)
+                    MaxNotifier(max_token, chat_id).send_message(message)
                     sent.append("MAX")
                 except MaxError as exc:
                     errors.append(f"MAX: {exc}")
@@ -124,10 +129,10 @@ def deliver_error_message(
             except Exception:
                 logger.exception("Не удалось отправить ошибку в Telegram")
 
-    if channel in ("max", "both") and settings.max_bot_token:
+    if channel in ("max", "both") and resolve_max_bot_token(db, settings):
         chat_id = resolve_max_chat_id(db, settings, client)
         if chat_id:
             try:
-                MaxNotifier(settings.max_bot_token, chat_id).send_error(error)
+                MaxNotifier(resolve_max_bot_token(db, settings), chat_id).send_error(error)
             except Exception:
                 logger.exception("Не удалось отправить ошибку в MAX")

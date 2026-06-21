@@ -874,6 +874,7 @@ def settings_page(
             "user": user,
             "telegram_chat_id": get_setting(db, "telegram_chat_id") or settings.telegram_chat_id,
             "max_chat_id": get_setting(db, "max_chat_id") or settings.max_chat_id,
+            "max_bot_token_configured": bool(get_setting(db, "max_bot_token") or settings.max_bot_token),
             "report_channel": effective_report_channel(db, settings),
             "report_time": get_setting(db, "report_time") or settings.report_time,
             "timezone": get_setting(db, "timezone") or settings.timezone,
@@ -887,6 +888,7 @@ def settings_save(
     request: Request,
     telegram_chat_id: str = Form(""),
     max_chat_id: str = Form(""),
+    max_bot_token: str = Form(""),
     report_channel: str = Form("telegram"),
     report_time: str = Form("09:00"),
     timezone: str = Form("Europe/Moscow"),
@@ -898,6 +900,8 @@ def settings_save(
         channel = "telegram"
     set_setting(db, "telegram_chat_id", telegram_chat_id.strip())
     set_setting(db, "max_chat_id", max_chat_id.strip())
+    if max_bot_token.strip():
+        set_setting(db, "max_bot_token", max_bot_token.strip())
     set_setting(db, "report_channel", channel)
     set_setting(db, "report_time", report_time.strip())
     set_setting(db, "timezone", timezone.strip())

@@ -388,6 +388,16 @@ code {
   font-size: 0.85rem;
 }
 
+.settings-section-title {
+  margin: 1.25rem 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.settings-section-title:first-of-type {
+  margin-top: 0.5rem;
+}
+
 .analytics-table td.cpa-high {
   background: rgba(252, 63, 29, 0.22);
   color: #ffb3a6;
