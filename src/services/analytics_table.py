@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session, joinedload
 
@@ -184,6 +184,7 @@ def _aggregate_rows(rows, goal_ids, attribution_model, vat_rate):
 
 
 SUMMARY_BUDGET_ALERT_PERCENT = 20.0
+CONVERSION_DROUGHT_DAYS = 3
 
 
 def _escape_html(text: str) -> str:
@@ -192,10 +193,6 @@ def _escape_html(text: str) -> str:
 
 def _fmt_money_summary(value: float) -> str:
     return f"{value:,.2f}".replace(",", " ").replace(".", ",")
-
-
-def _fmt_int_summary(value: int) -> str:
-    return f"{value:,}".replace(",", " ")
 
 
 def _budget_status_emoji(deviation_percent: float | None, has_budget: bool) -> str:
@@ -210,7 +207,53 @@ def _budget_status_emoji(deviation_percent: float | None, has_budget: bool) -> s
     return " 🔵"
 
 
-def format_analytics_telegram(rows: list[AnalyticsRow], date_from: date, date_to: date) -> str:
+def client_conversions_total(
+    settings: Settings,
+    client: Client,
+    date_from: date,
+    date_to: date,
+) -> float:
+    goal_ids = [g.goal_id for g in client.goals if g.is_selected]
+    if not goal_ids:
+        return 0.0
+    raw_rows = fetch_campaign_performance_rows_cached(settings, client, date_from, date_to)
+    _, _, _, conversions_by_goal, _ = _aggregate_rows(
+        raw_rows, goal_ids, client.attribution_model, settings.vat_rate
+    )
+    return sum(conversions_by_goal.values())
+
+
+def find_conversion_drought_clients(
+    db: Session,
+    settings: Settings,
+    report_date: date,
+    *,
+    active_only: bool = True,
+) -> list[str]:
+    """Клиенты без конверсий за последние CONVERSION_DROUGHT_DAYS дней (включая report_date)."""
+    drought_from = report_date - timedelta(days=CONVERSION_DROUGHT_DAYS - 1)
+    query = db.query(Client).options(joinedload(Client.goals)).order_by(Client.name)
+    if active_only:
+        query = query.filter(Client.is_active.is_(True))
+    clients = [client for client in query.all() if any(g.is_selected for g in client.goals)]
+
+    def _is_drought(client: Client) -> str | None:
+        total = client_conversions_total(settings, client, drought_from, report_date)
+        if total > 0:
+            return None
+        return client.name
+
+    drought_names = [name for name in map_parallel(_is_drought, clients) if name]
+    return drought_names
+
+
+def format_analytics_telegram(
+    rows: list[AnalyticsRow],
+    date_from: date,
+    date_to: date,
+    *,
+    conversion_drought_clients: list[str] | None = None,
+) -> str:
     period = date_from.strftime("%d.%m.%Y")
     if date_from != date_to:
         period += f" — {date_to.strftime('%d.%m.%Y')}"
@@ -231,13 +274,16 @@ def format_analytics_telegram(rows: list[AnalyticsRow], date_from: date, date_to
             index += 1
             continue
 
-        goals: list[AnalyticsRow] = []
+        goal_rows: list[AnalyticsRow] = []
         next_index = index + 1
         while next_index < len(rows) and not rows[next_index].show_client_block:
             goal_row = rows[next_index]
             if not goal_row.error and goal_row.goal_name != "—":
-                goals.append(goal_row)
+                goal_rows.append(goal_row)
             next_index += 1
+
+        total_conversions = sum(goal.conversions for goal in goal_rows)
+        cpa = (row.spend / total_conversions) if total_conversions > 0 else None
 
         pacing = build_budget_pacing(row.monthly_budget, row.spend, date_from, date_to)
         spend_text = _fmt_money_summary(row.spend)
@@ -245,12 +291,11 @@ def format_analytics_telegram(rows: list[AnalyticsRow], date_from: date, date_to
 
         if pacing.has_budget:
             if days == 1:
-                plan_label = f"план {_fmt_money_summary(pacing.daily_budget)} ₽/день"
+                plan_text = f"{_fmt_money_summary(pacing.daily_budget)} ₽"
             else:
-                plan_label = f"план {_fmt_money_summary(pacing.expected_spend)} ₽ за {days} дн."
-            budget_line = f"💰 <b>{spend_text} ₽</b> · {plan_label}{status}"
+                plan_text = f"{_fmt_money_summary(pacing.expected_spend)} ₽ ({days} дн.)"
         else:
-            budget_line = f"💰 <b>{spend_text} ₽</b>"
+            plan_text = "—"
 
         if (
             pacing.has_budget
@@ -258,39 +303,43 @@ def format_analytics_telegram(rows: list[AnalyticsRow], date_from: date, date_to
             and pacing.deviation_percent > SUMMARY_BUDGET_ALERT_PERCENT
         ):
             if days == 1:
-                plan_text = f"{_fmt_money_summary(pacing.daily_budget)} ₽/день"
+                plan_alert = f"{_fmt_money_summary(pacing.daily_budget)} ₽/день"
             else:
-                plan_text = f"{_fmt_money_summary(pacing.expected_spend)} ₽ за {days} дн."
+                plan_alert = f"{_fmt_money_summary(pacing.expected_spend)} ₽ за {days} дн."
             deviation = f"+{pacing.deviation_percent:.0f}%"
             budget_alerts.append(
                 f"• <b>{_escape_html(row.client_name)}</b>: "
-                f"расход {spend_text} ₽ при {plan_text} ({deviation})"
+                f"расход {spend_text} ₽ при {plan_alert} ({deviation})"
             )
 
-        block_lines = [
-            f"<b>{_escape_html(row.client_name)}</b>",
-            budget_line,
-            f"👁 {_fmt_int_summary(row.impressions)} · 👆 {_fmt_int_summary(row.clicks)} кл.",
-        ]
-        if row.monthly_budget > 0:
-            block_lines.append(
-                f"📋 бюджет/мес {_fmt_money_summary(row.monthly_budget)} ₽ · "
-                f"нед {_fmt_money_summary(row.weekly_budget)} ₽"
-            )
-        for goal in goals:
-            cpa_text = _fmt_money_summary(goal.cpa) if goal.cpa is not None else "—"
-            conv_text = f"{goal.conversions:g}".replace(".", ",")
-            block_lines.append(
-                f"   ↳ {_escape_html(goal.goal_name)}: {conv_text} конв. · CPA {cpa_text} ₽"
-            )
-
-        client_blocks.append("\n".join(block_lines))
+        conv_text = f"{total_conversions:g}".replace(".", ",")
+        cpa_text = f"{_fmt_money_summary(cpa)} ₽" if cpa is not None else "—"
+        client_blocks.append(
+            f"<b>{_escape_html(row.client_name)}</b>{status}\n"
+            f"{spend_text} ₽ · план {plan_text} · {conv_text} конв. · CPA {cpa_text}"
+        )
         index = next_index
 
     lines = [
         "📊 <b>Сводка Direct Nikitos Analytics</b>",
         f"📅 {period}",
     ]
+
+    drought = conversion_drought_clients or []
+    if drought:
+        drought_from = date_to - timedelta(days=CONVERSION_DROUGHT_DAYS - 1)
+        period_label = (
+            date_to.strftime("%d.%m.%Y")
+            if drought_from == date_to
+            else f"{drought_from.strftime('%d.%m')}—{date_to.strftime('%d.%m')}"
+        )
+        lines.extend(
+            [
+                "",
+                f"⚠️ <b>Нет конверсий {CONVERSION_DROUGHT_DAYS} дня ({period_label})</b>",
+                *[f"• <b>{_escape_html(name)}</b>" for name in drought],
+            ]
+        )
 
     if budget_alerts:
         lines.extend(
@@ -305,7 +354,7 @@ def format_analytics_telegram(rows: list[AnalyticsRow], date_from: date, date_to
         lines.extend(["", "─────────────────", ""])
         lines.append("\n\n".join(client_blocks))
 
-    if not client_blocks and not budget_alerts:
+    if not client_blocks and not budget_alerts and not drought:
         lines.append("")
         lines.append("Нет данных по клиентам.")
 

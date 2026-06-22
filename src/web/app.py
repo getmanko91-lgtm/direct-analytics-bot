@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from src.config import Settings, load_settings
 from src.db.database import SessionLocal, init_db
 from src.db.seed import ensure_admin_user
-from src.services.report_runner import run_all_reports
+from src.services.report_runner import effective_report_schedule, run_all_reports
 from src.web.auth_middleware import LoginRequiredMiddleware
 from src.web.routes import router
 
@@ -31,8 +31,13 @@ def _parse_report_time(value: str) -> tuple[int, int]:
 
 
 def _schedule_daily_job(settings: Settings) -> None:
-    hour, minute = _parse_report_time(settings.report_time)
-    tz = ZoneInfo(settings.timezone)
+    db = SessionLocal()
+    try:
+        report_time, timezone_name = effective_report_schedule(db, settings)
+    finally:
+        db.close()
+    hour, minute = _parse_report_time(report_time)
+    tz = ZoneInfo(timezone_name)
 
     scheduler.add_job(
         _run_scheduled_reports,
@@ -41,7 +46,12 @@ def _schedule_daily_job(settings: Settings) -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
-    logger.info("Планировщик: ежедневно в %02d:%02d (%s)", hour, minute, settings.timezone)
+    logger.info("Планировщик: ежедневно в %02d:%02d (%s)", hour, minute, timezone_name)
+
+
+def reschedule_daily_reports(settings: Settings) -> None:
+    if scheduler.running:
+        _schedule_daily_job(settings)
 
 
 def _run_scheduled_reports() -> None:

@@ -14,6 +14,7 @@ from src.db.models import Client, User
 from src.services.analytics_export import build_analytics_xlsx, export_filename
 from src.services.analytics_table import (
     fetch_analytics_table_cached,
+    find_conversion_drought_clients,
     format_analytics_telegram,
 )
 from src.services.client_balances import fetch_client_balances, format_balance
@@ -397,7 +398,13 @@ def analytics_send_report(
 
     try:
         rows = fetch_analytics_table_cached(db, settings, yesterday, yesterday)
-        message = format_analytics_telegram(rows, yesterday, yesterday)
+        drought = find_conversion_drought_clients(db, settings, yesterday)
+        message = format_analytics_telegram(
+            rows,
+            yesterday,
+            yesterday,
+            conversion_drought_clients=drought,
+        )
         target = deliver_report_message(db, settings, message)
         return RedirectResponse(
             redirect_url(
@@ -867,7 +874,7 @@ def reports_run_all(
     settings: Settings = Depends(get_app_settings),
 ):
     run_all_reports(db, settings)
-    return RedirectResponse(redirect_url("/", message="Отчёты отправлены"), status_code=303)
+    return RedirectResponse(redirect_url("/", message="Сводка за вчера отправлена"), status_code=303)
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -915,6 +922,9 @@ def settings_save(
     set_setting(db, "report_channel", channel)
     set_setting(db, "report_time", report_time.strip())
     set_setting(db, "timezone", timezone.strip())
+    from src.web.app import reschedule_daily_reports
+
+    reschedule_daily_reports(get_settings_dep(request))
     return RedirectResponse(redirect_url("/settings", message="Настройки сохранены"), status_code=303)
 
 
