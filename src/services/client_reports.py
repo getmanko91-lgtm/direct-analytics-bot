@@ -7,6 +7,12 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.config import Settings
 from src.db.models import Client
+from src.appmetrica import AppMetricaClient, AppMetricaError
+from src.services.appmetrica_sync import (
+    resolve_appmetrica_token,
+    selected_appmetrica_install_key,
+    selected_appmetrica_purchase_key,
+)
 from src.services.direct_report_rows import CACHE_TTL_SECONDS, fetch_client_report_rows_cached
 from src.services.parallel_fetch import map_parallel
 from src.services.runtime_cache import get_or_set
@@ -55,7 +61,7 @@ class WeekMetrics:
     image_conversions: float = 0.0
     app_spend_raw: float = 0.0
     app_installs: float = 0.0
-    app_revenue_raw: float = 0.0
+    app_purchases: float = 0.0
 
     def total_spend_raw(self) -> float:
         return self.conv_spend_raw + self.image_spend_raw + self.app_spend_raw
@@ -68,7 +74,7 @@ class WeekMetrics:
         self.image_conversions += other.image_conversions
         self.app_spend_raw += other.app_spend_raw
         self.app_installs += other.app_installs
-        self.app_revenue_raw += other.app_revenue_raw
+        self.app_purchases += other.app_purchases
 
 
 @dataclass
@@ -89,7 +95,7 @@ def fetch_client_reports(
     date_to: date,
     active_only: bool = True,
 ) -> list[ClientMonthlyReport]:
-    query = db.query(Client).options(joinedload(Client.goals)).order_by(Client.name)
+    query = db.query(Client).options(joinedload(Client.goals), joinedload(Client.appmetrica_goals)).order_by(Client.name)
     if active_only:
         query = query.filter(Client.is_active.is_(True))
     clients = query.all()
@@ -97,12 +103,13 @@ def fetch_client_reports(
     weeks = iter_week_ranges(date_from, date_to)
 
     def _load_client(client: Client) -> ClientMonthlyReport:
-        return _client_report_for_client(client, weeks, settings, date_from, date_to)
+        return _client_report_for_client(db, client, weeks, settings, date_from, date_to)
 
     return map_parallel(_load_client, clients)
 
 
 def _client_report_for_client(
+    db: Session,
     client: Client,
     weeks: list[tuple[date, date]],
     settings: Settings,
@@ -125,6 +132,7 @@ def _client_report_for_client(
     try:
         rows = fetch_client_report_rows_cached(settings, client, date_from, date_to)
         _aggregate_rows_into_report(report, rows, goal_ids, client.attribution_model)
+        _apply_appmetrica_metrics(db, report, client, settings, date_from, date_to)
     except Exception as exc:
         report.error = str(exc)[:300]
     return report
@@ -172,7 +180,6 @@ def _aggregate_rows_into_report(
         cost_raw = _parse_float(row.get("Cost", "0"))
         impressions = int(_parse_float(row.get("Impressions", "0")))
         conversions = sum(conversions_for_goal(row, gid, attribution_model) for gid in goal_ids)
-        revenue_raw = _parse_float(row.get("Revenue", "0"))
 
         if category == "conversion":
             metrics.conv_spend_raw += cost_raw
@@ -184,11 +191,62 @@ def _aggregate_rows_into_report(
         elif category == "app":
             metrics.app_spend_raw += cost_raw
             metrics.app_installs += conversions
-            metrics.app_revenue_raw += revenue_raw
 
     report.total = WeekMetrics()
     for week in report.week_metrics:
         report.total.add(week)
+
+
+def _apply_appmetrica_metrics(
+    db: Session,
+    report: ClientMonthlyReport,
+    client: Client,
+    settings: Settings,
+    date_from: date,
+    date_to: date,
+) -> None:
+    app_id = client.appmetrica_application_id
+    install_key = selected_appmetrica_install_key(client)
+    purchase_key = selected_appmetrica_purchase_key(client)
+    if not app_id or (not install_key and not purchase_key):
+        return
+
+    token = resolve_appmetrica_token(db, settings)
+    if not token:
+        report.error = _append_report_note(report.error, "Не задан токен AppMetrica (Настройки сервиса).")
+        return
+
+    try:
+        api = AppMetricaClient(token)
+        install_by_day: dict[date, float] = {}
+        purchase_by_day: dict[date, float] = {}
+        if install_key:
+            install_by_day = api.fetch_daily_counts(int(app_id), install_key, date_from, date_to)
+        if purchase_key:
+            purchase_by_day = api.fetch_daily_counts(int(app_id), purchase_key, date_from, date_to)
+    except AppMetricaError as exc:
+        report.error = _append_report_note(report.error, str(exc))
+        return
+
+    for week_idx, (week_from, week_to) in enumerate(report.weeks):
+        metrics = report.week_metrics[week_idx]
+        metrics.app_installs = 0.0
+        metrics.app_purchases = 0.0
+        current = week_from
+        while current <= week_to:
+            metrics.app_installs += install_by_day.get(current, 0.0)
+            metrics.app_purchases += purchase_by_day.get(current, 0.0)
+            current += timedelta(days=1)
+
+    report.total = WeekMetrics()
+    for week in report.week_metrics:
+        report.total.add(week)
+
+
+def _append_report_note(existing: str | None, note: str) -> str:
+    if existing:
+        return f"{existing} {note}"
+    return note
 
 
 def format_period(week_from: date, week_to: date) -> str:
@@ -216,7 +274,6 @@ def metrics_to_display(metrics: WeekMetrics, vat_rate: float) -> dict[str, str]:
     image_spend = cost_with_vat(metrics.image_spend_raw, vat_rate)
     app_spend = cost_with_vat(metrics.app_spend_raw, vat_rate)
     total_spend = conv_spend + image_spend + app_spend
-    app_revenue = cost_with_vat(metrics.app_revenue_raw, vat_rate)
 
     return {
         "conv_spend": format_money(conv_spend),
@@ -229,6 +286,7 @@ def metrics_to_display(metrics: WeekMetrics, vat_rate: float) -> dict[str, str]:
         "app_spend": format_money(app_spend),
         "app_installs": format_number(metrics.app_installs),
         "app_cpi": format_ratio(app_spend, metrics.app_installs),
-        "app_revenue": format_money(app_revenue),
+        "app_purchases": format_number(metrics.app_purchases),
+        "app_cpp": format_ratio(app_spend, metrics.app_purchases),
         "total_spend": format_money(total_spend),
     }

@@ -41,8 +41,9 @@ def _write_metrics_row(ws, row_idx: int, period_label: str, metrics: WeekMetrics
     ws.cell(row=row_idx, column=9, value=display["app_spend"])
     ws.cell(row=row_idx, column=10, value=display["app_installs"])
     ws.cell(row=row_idx, column=11, value=display["app_cpi"])
-    ws.cell(row=row_idx, column=12, value=display["app_revenue"])
-    ws.cell(row=row_idx, column=13, value=display["total_spend"])
+    ws.cell(row=row_idx, column=12, value=display["app_purchases"])
+    ws.cell(row=row_idx, column=13, value=display["app_cpp"])
+    ws.cell(row=row_idx, column=14, value=display["total_spend"])
 
 
 def _write_report_header(ws, start_row: int) -> int:
@@ -67,14 +68,14 @@ def _write_report_header(ws, start_row: int) -> int:
     cell.fill = FILL_IMAGE
     cell.alignment = center
 
-    ws.merge_cells(start_row=start_row, start_column=9, end_row=start_row, end_column=12)
+    ws.merge_cells(start_row=start_row, start_column=9, end_row=start_row, end_column=13)
     cell = ws.cell(row=start_row, column=9, value="реклама приложения")
     cell.font = header_font
     cell.fill = FILL_APP
     cell.alignment = center
 
-    ws.merge_cells(start_row=start_row, start_column=13, end_row=start_row + 1, end_column=13)
-    cell = ws.cell(row=start_row, column=13, value="расход общий")
+    ws.merge_cells(start_row=start_row, start_column=14, end_row=start_row + 1, end_column=14)
+    cell = ws.cell(row=start_row, column=14, value="расход общий")
     cell.font = header_font
     cell.fill = FILL_TOTAL
     cell.alignment = center
@@ -88,9 +89,10 @@ def _write_report_header(ws, start_row: int) -> int:
         (7, "CPM (стоимость 1000 показов)", FILL_IMAGE),
         (8, "конверсии", FILL_IMAGE),
         (9, "расход", FILL_APP),
-        (10, "установка", FILL_APP),
+        (10, "установки", FILL_APP),
         (11, "цена установки", FILL_APP),
-        (12, "доход", FILL_APP),
+        (12, "покупки", FILL_APP),
+        (13, "стоимость покупки", FILL_APP),
     ]
     sub_row = start_row + 1
     for col, title, fill in subheaders:
@@ -120,9 +122,9 @@ def _write_client_section(ws, start_row: int, report: ClientMonthlyReport, vat_r
     _write_metrics_row(ws, row, total_label, report.total, vat_rate)
     row += 1
 
-    ws.cell(row=row, column=11, value="ПЛАН").font = Font(bold=True)
+    ws.cell(row=row, column=12, value="ПЛАН").font = Font(bold=True)
     if report.plan_budget > 0:
-        ws.cell(row=row, column=13, value=format_money(report.plan_budget))
+        ws.cell(row=row, column=14, value=format_money(report.plan_budget))
     row += 2
     return row
 
@@ -145,14 +147,14 @@ def build_client_reports_xlsx(
     ws["A1"] = "Отчеты клиентам — Direct Nikitos Analytics"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = f"Период: {period}"
-    ws["A3"] = f"Расход с НДС {vat_percent}%. Цена конверсии / CPM / цена установки — с НДС."
+    ws["A3"] = f"Расход с НДС {vat_percent}%. Цена конверсии / CPM / цена установки / стоимость покупки — с НДС."
 
     vat_rate = vat_percent / 100
     row = 5
     for report in reports:
         row = _write_client_section(ws, row, report, vat_rate)
 
-    for col in range(1, 14):
+    for col in range(1, 15):
         ws.column_dimensions[get_column_letter(col)].width = 16
 
     buffer = io.BytesIO()

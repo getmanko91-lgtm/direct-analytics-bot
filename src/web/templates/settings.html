@@ -25,6 +25,12 @@
   </label>
   <p class="muted form-hint">Токен и chat_id можно указать здесь. Chat_id — в документации dev.max.ru.</p>
 
+  <h2 class="settings-section-title">AppMetrica</h2>
+  <label>OAuth-токен AppMetrica
+    <input type="password" name="appmetrica_token" autocomplete="off" placeholder="{% if appmetrica_token_configured %}Токен задан — вставьте новый, чтобы заменить{% else %}scope appmetrica:read{% endif %}">
+  </label>
+  <p class="muted form-hint">Для установок и покупок в отчёте «Отчеты клиентам». Можно также задать в <code>.env</code> как <code>YANDEX_APPMETRICA_TOKEN</code>.</p>
+
   <h2 class="settings-section-title">Telegram</h2>
   <label>Общий Telegram chat_id
     <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}">

@@ -11,6 +11,7 @@ from src.db.models import Client
 from src.services.analytics_table import (
     fetch_analytics_table_cached,
     find_conversion_drought_clients,
+    find_weekly_budget_overruns,
     format_analytics_telegram,
 )
 from src.services.app_settings import get_setting, set_setting
@@ -83,11 +84,14 @@ def run_daily_summary_report(db: Session, settings: Settings) -> None:
     yesterday = date.today() - timedelta(days=1)
     rows = fetch_analytics_table_cached(db, settings, yesterday, yesterday)
     drought = find_conversion_drought_clients(db, settings, yesterday)
+    week_from, week_to, week_overruns = find_weekly_budget_overruns(db, settings, yesterday)
     message = format_analytics_telegram(
         rows,
         yesterday,
         yesterday,
         conversion_drought_clients=drought,
+        weekly_budget_alerts=week_overruns,
+        weekly_budget_period=(week_from, week_to),
     )
     deliver_report_message(db, settings, message)
     set_setting(db, "last_report_run", datetime.utcnow().isoformat())

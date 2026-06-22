@@ -32,6 +32,7 @@
   </div>
   <p class="muted">
     Конверсии — кампании «КОНВЕРСИИ» / «Конверс»; имидж — «ИМИДЖ»; приложения — «ПРИЛ» / «ПРИЛОЖ».
+    Установки и покупки — из AppMetrica (цели в карточке клиента).
   </p>
 </div>
 
@@ -48,7 +49,7 @@
           <th rowspan="2" class="cr-date">Дата</th>
           <th colspan="3" class="cr-conv">реклама на конверсии</th>
           <th colspan="4" class="cr-image">реклама на имидж</th>
-          <th colspan="4" class="cr-app">реклама приложения</th>
+          <th colspan="5" class="cr-app">реклама приложения</th>
           <th rowspan="2" class="cr-total">расход общий</th>
         </tr>
         <tr>
@@ -60,9 +61,10 @@
           <th class="cr-image">CPM (стоимость 1000 показов)</th>
           <th class="cr-image">конверсии</th>
           <th class="cr-app">расход</th>
-          <th class="cr-app">установка</th>
+          <th class="cr-app">установки</th>
           <th class="cr-app">цена установки</th>
-          <th class="cr-app">доход</th>
+          <th class="cr-app">покупки</th>
+          <th class="cr-app">стоимость покупки</th>
         </tr>
       </thead>
       <tbody>
@@ -79,7 +81,8 @@
           <td>{{ row.app_spend }}</td>
           <td>{{ row.app_installs }}</td>
           <td class="{% if row.app_cpi == '#DIV/0!' %}cr-div{% endif %}">{{ row.app_cpi }}</td>
-          <td>{{ row.app_revenue }}</td>
+          <td>{{ row.app_purchases }}</td>
+          <td class="{% if row.app_cpp == '#DIV/0!' %}cr-div{% endif %}">{{ row.app_cpp }}</td>
           <td>{{ row.total_spend }}</td>
         </tr>
         {% endfor %}
@@ -95,11 +98,12 @@
           <td>{{ report.total.app_spend }}</td>
           <td>{{ report.total.app_installs }}</td>
           <td class="{% if report.total.app_cpi == '#DIV/0!' %}cr-div{% endif %}">{{ report.total.app_cpi }}</td>
-          <td>{{ report.total.app_revenue }}</td>
+          <td>{{ report.total.app_purchases }}</td>
+          <td class="{% if report.total.app_cpp == '#DIV/0!' %}cr-div{% endif %}">{{ report.total.app_cpp }}</td>
           <td>{{ report.total.total_spend }}</td>
         </tr>
         <tr class="cr-plan-row">
-          <td colspan="10"></td>
+          <td colspan="11"></td>
           <td class="cr-plan-label">ПЛАН</td>
           <td></td>
           <td>{{ report.plan_budget }}</td>

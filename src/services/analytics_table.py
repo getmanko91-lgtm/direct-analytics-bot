@@ -187,6 +187,22 @@ SUMMARY_BUDGET_ALERT_PERCENT = 20.0
 CONVERSION_DROUGHT_DAYS = 3
 
 
+@dataclass(frozen=True)
+class WeeklyBudgetAlert:
+    client_name: str
+    spend: float
+    plan: float
+    deviation_percent: float
+
+
+def previous_calendar_week(before: date) -> tuple[date, date]:
+    """Календарная неделя (пн–вс) непосредственно перед неделей, содержащей before."""
+    this_monday = before - timedelta(days=before.weekday())
+    prev_sunday = this_monday - timedelta(days=1)
+    prev_monday = prev_sunday - timedelta(days=6)
+    return prev_monday, prev_sunday
+
+
 def _escape_html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -247,12 +263,67 @@ def find_conversion_drought_clients(
     return drought_names
 
 
+def find_weekly_budget_overruns(
+    db: Session,
+    settings: Settings,
+    report_date: date,
+    *,
+    active_only: bool = True,
+) -> tuple[date, date, list[WeeklyBudgetAlert]]:
+    week_from, week_to = previous_calendar_week(report_date)
+    rows = fetch_analytics_table_cached(db, settings, week_from, week_to, active_only)
+    alerts: list[WeeklyBudgetAlert] = []
+    seen: set[int] = set()
+
+    for row in rows:
+        if not row.show_client_block:
+            continue
+        if row.client_id in seen:
+            continue
+        seen.add(row.client_id)
+        if row.error:
+            continue
+
+        pacing = build_budget_pacing(row.monthly_budget, row.spend, week_from, week_to)
+        if (
+            pacing.has_budget
+            and pacing.deviation_percent is not None
+            and pacing.deviation_percent > SUMMARY_BUDGET_ALERT_PERCENT
+        ):
+            alerts.append(
+                WeeklyBudgetAlert(
+                    client_name=row.client_name,
+                    spend=row.spend,
+                    plan=pacing.expected_spend,
+                    deviation_percent=pacing.deviation_percent,
+                )
+            )
+
+    return week_from, week_to, alerts
+
+
+def _format_budget_alert_line(
+    client_name: str,
+    spend: float,
+    plan_label: str,
+    deviation_percent: float,
+) -> str:
+    spend_text = _fmt_money_summary(spend)
+    deviation = f"+{deviation_percent:.0f}%"
+    return (
+        f"• <b>{_escape_html(client_name)}</b>: "
+        f"расход {spend_text} ₽ при {plan_label} ({deviation})"
+    )
+
+
 def format_analytics_telegram(
     rows: list[AnalyticsRow],
     date_from: date,
     date_to: date,
     *,
     conversion_drought_clients: list[str] | None = None,
+    weekly_budget_alerts: list[WeeklyBudgetAlert] | None = None,
+    weekly_budget_period: tuple[date, date] | None = None,
 ) -> str:
     period = date_from.strftime("%d.%m.%Y")
     if date_from != date_to:
@@ -306,10 +377,8 @@ def format_analytics_telegram(
                 plan_alert = f"{_fmt_money_summary(pacing.daily_budget)} ₽/день"
             else:
                 plan_alert = f"{_fmt_money_summary(pacing.expected_spend)} ₽ за {days} дн."
-            deviation = f"+{pacing.deviation_percent:.0f}%"
             budget_alerts.append(
-                f"• <b>{_escape_html(row.client_name)}</b>: "
-                f"расход {spend_text} ₽ при {plan_alert} ({deviation})"
+                _format_budget_alert_line(row.client_name, row.spend, plan_alert, pacing.deviation_percent)
             )
 
         conv_text = f"{total_conversions:g}".replace(".", ",")
@@ -342,11 +411,36 @@ def format_analytics_telegram(
         )
 
     if budget_alerts:
+        daily_title = "за вчера" if days == 1 else "за период"
         lines.extend(
             [
                 "",
-                f"🚨 <b>Превышение бюджета (&gt;{int(SUMMARY_BUDGET_ALERT_PERCENT)}%)</b>",
+                f"🚨 <b>Превышение бюджета {daily_title} (&gt;{int(SUMMARY_BUDGET_ALERT_PERCENT)}%)</b>",
                 *budget_alerts,
+            ]
+        )
+
+    week_alerts = weekly_budget_alerts or []
+    if week_alerts and weekly_budget_period:
+        week_from, week_to = weekly_budget_period
+        week_label = (
+            week_to.strftime("%d.%m.%Y")
+            if week_from == week_to
+            else f"{week_from.strftime('%d.%m')}—{week_to.strftime('%d.%m.%Y')}"
+        )
+        lines.extend(
+            [
+                "",
+                f"🚨 <b>Превышение бюджета за прошлую неделю ({week_label})</b>",
+                *[
+                    _format_budget_alert_line(
+                        alert.client_name,
+                        alert.spend,
+                        f"{_fmt_money_summary(alert.plan)} ₽ за 7 дн.",
+                        alert.deviation_percent,
+                    )
+                    for alert in week_alerts
+                ],
             ]
         )
 
@@ -354,7 +448,7 @@ def format_analytics_telegram(
         lines.extend(["", "─────────────────", ""])
         lines.append("\n\n".join(client_blocks))
 
-    if not client_blocks and not budget_alerts and not drought:
+    if not client_blocks and not budget_alerts and not drought and not week_alerts:
         lines.append("")
         lines.append("Нет данных по клиентам.")
 

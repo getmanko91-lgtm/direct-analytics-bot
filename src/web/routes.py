@@ -15,6 +15,7 @@ from src.services.analytics_export import build_analytics_xlsx, export_filename
 from src.services.analytics_table import (
     fetch_analytics_table_cached,
     find_conversion_drought_clients,
+    find_weekly_budget_overruns,
     format_analytics_telegram,
 )
 from src.services.client_balances import fetch_client_balances, format_balance
@@ -27,7 +28,7 @@ from src.services.cpa_style import (
     format_period_short,
     previous_period,
 )
-from src.services.goals_sync import selected_goal_ids, sync_client_goals
+from src.services.appmetrica_sync import sync_client_appmetrica_goals
 from src.services.client_reports import fetch_client_reports_cached, format_period, metrics_to_display
 from src.services.client_reports_export import build_client_reports_xlsx, export_filename as client_reports_export_filename
 from src.services.kpi_table import fetch_kpi_table_cached
@@ -399,11 +400,14 @@ def analytics_send_report(
     try:
         rows = fetch_analytics_table_cached(db, settings, yesterday, yesterday)
         drought = find_conversion_drought_clients(db, settings, yesterday)
+        week_from, week_to, week_overruns = find_weekly_budget_overruns(db, settings, yesterday)
         message = format_analytics_telegram(
             rows,
             yesterday,
             yesterday,
             conversion_drought_clients=drought,
+            weekly_budget_alerts=week_overruns,
+            weekly_budget_period=(week_from, week_to),
         )
         target = deliver_report_message(db, settings, message)
         return RedirectResponse(
@@ -611,6 +615,7 @@ def client_create(
     name: str = Form(...),
     yandex_login: str = Form(...),
     metrika_counter_id: str = Form(""),
+    appmetrica_application_id: str = Form(""),
     telegram_chat_id: str = Form(""),
     max_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
@@ -621,6 +626,7 @@ def client_create(
     db: Session = Depends(get_db),
 ):
     counter_id = int(metrika_counter_id) if metrika_counter_id.strip() else None
+    appmetrica_id = int(appmetrica_application_id) if appmetrica_application_id.strip() else None
     try:
         yandex_login = require_ascii_login(yandex_login)
     except ValueError as exc:
@@ -634,6 +640,7 @@ def client_create(
         name=name.strip(),
         yandex_login=yandex_login.strip(),
         metrika_counter_id=counter_id,
+        appmetrica_application_id=appmetrica_id,
         telegram_chat_id=telegram_chat_id.strip(),
         max_chat_id=max_chat_id.strip(),
         spend_alert_threshold=spend_alert_threshold,
@@ -679,6 +686,7 @@ def client_update(
     name: str = Form(...),
     yandex_login: str = Form(...),
     metrika_counter_id: str = Form(""),
+    appmetrica_application_id: str = Form(""),
     telegram_chat_id: str = Form(""),
     max_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
@@ -706,6 +714,7 @@ def client_update(
 
     client.name = name.strip()
     client.metrika_counter_id = int(metrika_counter_id) if metrika_counter_id.strip() else None
+    client.appmetrica_application_id = int(appmetrica_application_id) if appmetrica_application_id.strip() else None
     client.telegram_chat_id = telegram_chat_id.strip()
     client.max_chat_id = max_chat_id.strip()
     client.spend_alert_threshold = spend_alert_threshold
@@ -810,6 +819,94 @@ def client_goals_save(
     )
 
 
+@router.get("/clients/{client_id}/appmetrica-goals", response_class=HTMLResponse)
+def client_appmetrica_goals_page(
+    request: Request,
+    client_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    client = db.query(Client).options(joinedload(Client.appmetrica_goals)).get(client_id)
+    if not client:
+        return RedirectResponse("/clients", status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "clients/appmetrica_goals.html",
+        {
+            "user": user,
+            "client": client,
+            "message": request.query_params.get("message"),
+            "error": request.query_params.get("error"),
+            "warn": request.query_params.get("warn"),
+        },
+    )
+
+
+@router.post("/clients/{client_id}/appmetrica-goals/sync")
+def client_appmetrica_goals_sync(
+    client_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    client = db.query(Client).options(joinedload(Client.appmetrica_goals)).get(client_id)
+    if not client:
+        return RedirectResponse("/clients", status_code=303)
+    try:
+        result = sync_client_appmetrica_goals(db, client, settings)
+        message = f"Загружено событий: {len(result.goals)}"
+        query = {"message": message}
+        if result.warnings:
+            query["warn"] = " ".join(result.warnings)[:600]
+        return RedirectResponse(
+            redirect_url(f"/clients/{client_id}/appmetrica-goals", **query),
+            status_code=303,
+        )
+    except Exception as exc:
+        return RedirectResponse(
+            redirect_url(f"/clients/{client_id}/appmetrica-goals", error=str(exc)[:400]),
+            status_code=303,
+        )
+
+
+@router.post("/clients/{client_id}/appmetrica-goals")
+def client_appmetrica_goals_save(
+    client_id: int,
+    install_goal: str = Form(""),
+    purchase_goal: str = Form(""),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    client = db.query(Client).options(joinedload(Client.appmetrica_goals)).get(client_id)
+    if not client:
+        return RedirectResponse("/clients", status_code=303)
+
+    valid_keys = {goal.event_key for goal in client.appmetrica_goals}
+    install_key = install_goal.strip() if install_goal.strip() in valid_keys else ""
+    purchase_key = purchase_goal.strip() if purchase_goal.strip() in valid_keys else ""
+    if install_key and purchase_key and install_key == purchase_key:
+        return RedirectResponse(
+            redirect_url(
+                f"/clients/{client_id}/appmetrica-goals",
+                error="Цель установки и покупки не могут совпадать",
+            ),
+            status_code=303,
+        )
+
+    for goal in client.appmetrica_goals:
+        goal.role = ""
+    for goal in client.appmetrica_goals:
+        if goal.event_key == install_key:
+            goal.role = "install"
+        elif goal.event_key == purchase_key:
+            goal.role = "purchase"
+    db.commit()
+    return RedirectResponse(
+        redirect_url(f"/clients/{client_id}/appmetrica-goals", message="Цели AppMetrica сохранены"),
+        status_code=303,
+    )
+
+
 @router.get("/clients/{client_id}/preview", response_class=HTMLResponse)
 def client_preview(
     request: Request,
@@ -892,6 +989,9 @@ def settings_page(
             "telegram_chat_id": get_setting(db, "telegram_chat_id") or settings.telegram_chat_id,
             "max_chat_id": get_setting(db, "max_chat_id") or settings.max_chat_id,
             "max_bot_token_configured": bool(get_setting(db, "max_bot_token") or settings.max_bot_token),
+            "appmetrica_token_configured": bool(
+                get_setting(db, "appmetrica_token") or settings.yandex_appmetrica_token
+            ),
             "report_channel": effective_report_channel(db, settings),
             "report_time": get_setting(db, "report_time") or settings.report_time,
             "timezone": get_setting(db, "timezone") or settings.timezone,
@@ -906,6 +1006,7 @@ def settings_save(
     telegram_chat_id: str = Form(""),
     max_chat_id: str = Form(""),
     max_bot_token: str = Form(""),
+    appmetrica_token: str = Form(""),
     report_channel: str = Form("telegram"),
     report_time: str = Form("09:00"),
     timezone: str = Form("Europe/Moscow"),
@@ -919,6 +1020,8 @@ def settings_save(
     set_setting(db, "max_chat_id", max_chat_id.strip())
     if max_bot_token.strip():
         set_setting(db, "max_bot_token", max_bot_token.strip())
+    if appmetrica_token.strip():
+        set_setting(db, "appmetrica_token", appmetrica_token.strip())
     set_setting(db, "report_channel", channel)
     set_setting(db, "report_time", report_time.strip())
     set_setting(db, "timezone", timezone.strip())

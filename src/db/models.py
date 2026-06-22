@@ -33,6 +33,7 @@ class Client(Base):
     name: Mapped[str] = mapped_column(String(128))
     yandex_login: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     metrika_counter_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    appmetrica_application_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     telegram_chat_id: Mapped[str] = mapped_column(String(64), default="")
     max_chat_id: Mapped[str] = mapped_column(String(64), default="")
     spend_alert_threshold: Mapped[float] = mapped_column(Float, default=0.0)
@@ -46,6 +47,23 @@ class Client(Base):
         back_populates="client",
         cascade="all, delete-orphan",
     )
+    appmetrica_goals: Mapped[list[ClientAppMetricaGoal]] = relationship(
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )
+
+
+class ClientAppMetricaGoal(Base):
+    __tablename__ = "client_appmetrica_goals"
+    __table_args__ = (UniqueConstraint("client_id", "event_key", name="uq_client_appmetrica_goal"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"))
+    event_key: Mapped[str] = mapped_column(String(256))
+    event_label: Mapped[str] = mapped_column(String(256))
+    role: Mapped[str] = mapped_column(String(16), default="")  # install | purchase | ""
+
+    client: Mapped[Client] = relationship(back_populates="appmetrica_goals")
 
 
 class ClientGoal(Base):

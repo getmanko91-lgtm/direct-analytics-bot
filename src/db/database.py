@@ -52,3 +52,5 @@ def _migrate_sqlite() -> None:
             conn.execute(text("ALTER TABLE clients ADD COLUMN directologist VARCHAR(32) NOT NULL DEFAULT 'Ксюша'"))
         if "max_chat_id" not in columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN max_chat_id VARCHAR(64) NOT NULL DEFAULT ''"))
+        if "appmetrica_application_id" not in columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN appmetrica_application_id INTEGER"))

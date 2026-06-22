@@ -24,7 +24,8 @@
 {% if client.goals %}
 <form method="post" class="card">
   <p class="muted">Отметьте цели, по которым считать конверсии и CPA, затем нажмите <strong>«Сохранить выбор»</strong>.</p>
-  <p class="muted">Если при синхронизации видите «код 53» — это ограничение Live API Директа. Укажите <strong>ID счётчика Метрики</strong> в карточке клиента и синхронизируйте снова — цели подтянутся через API Метрики.</p>
+  <p class="muted">Если при синхронизации видите «код 53» — укажите <strong>ID счётчика Метрики</strong> в карточке клиента.</p>
+  <p class="muted">Для отчёта по приложениям: <a href="/clients/{{ client.id }}/appmetrica-goals">цели AppMetrica</a> (установки и покупки).</p>
   <div class="goals-list">
     {% for goal in client.goals|sort(attribute='goal_name') %}
     <label class="goal-item">

@@ -16,6 +16,7 @@ REPORT_CHANNELS = frozenset({"telegram", "max", "both"})
 class Settings:
     yandex_token: str
     yandex_metrika_token: str | None
+    yandex_appmetrica_token: str | None
     telegram_bot_token: str
     telegram_chat_id: str
     telegram_proxy: str | None
@@ -53,6 +54,7 @@ def load_settings() -> Settings:
     return Settings(
         yandex_token=os.environ["YANDEX_DIRECT_TOKEN"],
         yandex_metrika_token=os.getenv("YANDEX_METRIKA_TOKEN") or None,
+        yandex_appmetrica_token=os.getenv("YANDEX_APPMETRICA_TOKEN") or None,
         telegram_bot_token=telegram_token,
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
         telegram_proxy=(os.getenv("TELEGRAM_PROXY") or os.getenv("HTTPS_PROXY") or "").strip() or None,

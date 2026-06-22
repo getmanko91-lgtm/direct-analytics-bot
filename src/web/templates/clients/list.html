@@ -36,6 +36,7 @@
       <td>{{ client.attribution_model }}</td>
       <td class="actions">
         <a href="/clients/{{ client.id }}/goals">Цели</a>
+        <a href="/clients/{{ client.id }}/appmetrica-goals">AppMetrica</a>
         <a href="/clients/{{ client.id }}/edit">Изменить</a>
         <form action="/clients/{{ client.id }}/delete" method="post" class="inline" onsubmit="return confirm('Удалить клиента «{{ client.name }}»?');">
           <button type="submit" class="link-btn link-btn-danger">Удалить</button>
