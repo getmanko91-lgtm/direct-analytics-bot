@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import date, datetime
 
 import requests
@@ -11,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 STAT_DATA_URL = "https://api.appmetrica.yandex.com/stat/v1/data"
 EVENTS_URL = "https://api.appmetrica.yandex.com/v1/traffic/sources/events"
+TRACKERS_URL = "https://api.appmetrica.yandex.com/management/v1/application/{application_id}/trackers"
+_SERVE_HASH_RE = re.compile(r"/serve/(\d+)")
 
 BUILTIN_INSTALL_KEY = "__builtin_install__"
 BUILTIN_PURCHASE_KEY = "__builtin_purchase__"
@@ -22,7 +25,13 @@ BUILTIN_GOALS = (
     (BUILTIN_PURCHASE_KEY, BUILTIN_PURCHASE_LABEL),
 )
 
-_TRACKER_DIMENSION = "ym:ts:trackingId"
+_TRACKER_DIMENSION = "ym:ts:tracker"
+
+
+@dataclass(frozen=True)
+class ResolvedTracker:
+    tracking_id: str
+    name: str
 
 
 class AppMetricaError(RuntimeError):
@@ -63,6 +72,48 @@ class AppMetricaClient:
         events = events_info.get("events") or []
         return sorted({str(name).strip() for name in events if str(name).strip()})
 
+    def resolve_tracker(self, application_id: int, tracker_ref: str) -> ResolvedTracker:
+        ref = tracker_ref.strip()
+        if not ref:
+            raise AppMetricaError("Не задан трекер AppMetrica.")
+
+        serve_hash = _extract_serve_hash(ref)
+        trackers = self._list_trackers(application_id)
+        ref_lower = ref.lower()
+        for tracker in trackers:
+            tracking_id = str(tracker.get("id", "")).strip()
+            name = str(tracker.get("name", "")).strip()
+            urls = " ".join(
+                str(tracker.get(key, ""))
+                for key in (
+                    "tracking_url",
+                    "url",
+                    "click_url",
+                    "tracking_link",
+                    "tracking_urls",
+                    "impression_url",
+                )
+            )
+            if not tracking_id:
+                continue
+            if ref == tracking_id or ref == name or ref_lower == name.lower():
+                return ResolvedTracker(tracking_id, name or tracking_id)
+            if serve_hash and serve_hash in urls:
+                return ResolvedTracker(tracking_id, name or tracking_id)
+
+        if ref.isdigit() and len(ref) <= 12:
+            return ResolvedTracker(ref, ref)
+
+        if serve_hash:
+            raise AppMetricaError(
+                f"Трекер с ссылкой /serve/{serve_hash} не найден в приложении AppMetrica {application_id}. "
+                "Проверьте ID приложения и токен AppMetrica."
+            )
+        raise AppMetricaError(
+            f"Трекер «{ref}» не найден в приложении AppMetrica {application_id}. "
+            "Укажите числовой ID трекера или полную трекинговую ссылку из AppMetrica → Трекинг."
+        )
+
     def fetch_daily_counts(
         self,
         application_id: int,
@@ -73,6 +124,9 @@ class AppMetricaClient:
         tracking_id: str | None = None,
     ) -> dict[date, float]:
         tracker_ref = (tracking_id or "").strip() or None
+        resolved_tracker = (
+            self.resolve_tracker(application_id, tracker_ref) if tracker_ref else None
+        )
         if event_key == BUILTIN_INSTALL_KEY:
             metrics = ("ym:ts:advInstallDevices",) if tracker_ref else (
                 "ym:i:installDevices",
@@ -83,7 +137,7 @@ class AppMetricaClient:
                 metrics,
                 date_from,
                 date_to,
-                tracking_ref=tracker_ref,
+                resolved_tracker=resolved_tracker,
             )
 
         if event_key == BUILTIN_PURCHASE_KEY:
@@ -104,7 +158,7 @@ class AppMetricaClient:
                 metrics,
                 date_from,
                 date_to,
-                tracking_ref=tracker_ref,
+                resolved_tracker=resolved_tracker,
             )
 
         metric, event_filter = _metric_spec(event_key)
@@ -114,7 +168,7 @@ class AppMetricaClient:
             date_from,
             date_to,
             extra_filters=None,
-            tracking_ref=tracker_ref,
+            resolved_tracker=resolved_tracker,
             event_filter=event_filter,
         )
 
@@ -126,18 +180,17 @@ class AppMetricaClient:
         date_to: date,
         *,
         extra_filters: str | None = None,
-        tracking_ref: str | None = None,
+        resolved_tracker: ResolvedTracker | None = None,
         event_filter: str | None = None,
     ) -> dict[date, float]:
-        tracker_ref = (tracking_ref or "").strip() or None
         last_error: AppMetricaError | None = None
         for metric in metrics:
             try:
-                if tracker_ref:
+                if resolved_tracker:
                     return self._fetch_tracked_daily_counts(
                         application_id,
                         metric,
-                        tracker_ref,
+                        resolved_tracker,
                         date_from,
                         date_to,
                         event_filter=event_filter or extra_filters,
@@ -157,14 +210,14 @@ class AppMetricaClient:
         self,
         application_id: int,
         metric: str,
-        tracker_ref: str,
+        tracker: ResolvedTracker,
         date_from: date,
         date_to: date,
         *,
         event_filter: str | None = None,
     ) -> dict[date, float]:
         last_error: AppMetricaError | None = None
-        for tracker_filter in _tracker_filter_variants(tracker_ref):
+        for tracker_filter in _tracker_filter_variants(tracker):
             combined = _combine_filters(event_filter, tracker_filter)
             try:
                 return self._fetch_daily_counts_metric(
@@ -186,7 +239,7 @@ class AppMetricaClient:
                 return self._fetch_daily_counts_by_tracker_dimension(
                     application_id,
                     metric,
-                    tracker_ref,
+                    tracker,
                     date_from,
                     date_to,
                     event_filter=event_filter,
@@ -194,13 +247,13 @@ class AppMetricaClient:
             except AppMetricaError as exc:
                 last_error = exc
 
-        raise _tracker_filter_error(tracker_ref, last_error)
+        raise _tracker_filter_error(tracker, last_error)
 
     def _fetch_daily_counts_by_tracker_dimension(
         self,
         application_id: int,
         metric: str,
-        tracker_ref: str,
+        tracker: ResolvedTracker,
         date_from: date,
         date_to: date,
         *,
@@ -231,7 +284,7 @@ class AppMetricaClient:
             metrics = row.get("metrics") or []
             if len(dimensions) < 2 or not metrics:
                 continue
-            if not _tracker_dimension_matches(dimensions[1], tracker_ref):
+            if not _tracker_dimension_matches(dimensions[1], tracker):
                 continue
             day = _parse_dimension_date(dimensions[0])
             if day is None:
@@ -298,6 +351,43 @@ class AppMetricaClient:
 
         return response.json()
 
+    def _list_trackers(self, application_id: int) -> list[dict]:
+        url = TRACKERS_URL.format(application_id=application_id)
+        try:
+            response = requests.get(
+                url,
+                params={"limit": 1000},
+                headers=self._headers(),
+                timeout=60,
+            )
+        except RequestException as exc:
+            raise AppMetricaError("Не удалось подключиться к Management API AppMetrica") from exc
+
+        if response.status_code == 401:
+            raise AppMetricaError("Недействительный токен для API AppMetrica.")
+        if response.status_code == 403:
+            raise AppMetricaError(f"Нет доступа к приложению AppMetrica {application_id}.")
+        if response.status_code == 404:
+            raise AppMetricaError(f"Приложение AppMetrica {application_id} не найдено.")
+        if response.status_code >= 400:
+            detail = ""
+            try:
+                detail = response.json().get("message", "")
+            except Exception:
+                detail = response.text[:200]
+            raise AppMetricaError(
+                f"AppMetrica Management API: HTTP {response.status_code}"
+                + (f" — {detail}" if detail else "")
+            )
+
+        payload = response.json()
+        trackers = payload.get("trackers")
+        if isinstance(trackers, list):
+            return trackers
+        if isinstance(payload, list):
+            return payload
+        return []
+
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"OAuth {self._token}"}
 
@@ -323,66 +413,51 @@ def _escape_filter_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def _extract_tracking_digits(tracker_ref: str) -> str:
-    raw = tracker_ref.strip()
-    if raw.isdigit():
-        return raw
-    match = re.search(r"\d{3,}", raw)
-    return match.group(0) if match else ""
+def _extract_serve_hash(tracker_ref: str) -> str:
+    match = _SERVE_HASH_RE.search(tracker_ref)
+    return match.group(1) if match else ""
 
 
-def _tracker_filter_variants(tracker_ref: str) -> tuple[str, ...]:
-    digits = _extract_tracking_digits(tracker_ref)
-    if not digits:
-        return ()
-    escaped = _escape_filter_value(digits)
-    return (
-        f"ym:ts:trackingId=='{escaped}'",
-        f"ym:ts:trackingId=={digits}",
-    )
+def _tracker_filter_variants(tracker: ResolvedTracker) -> tuple[str, ...]:
+    variants: list[str] = []
+    if tracker.name and tracker.name != tracker.tracking_id:
+        variants.append(f"ym:ts:tracker=='{_escape_filter_value(tracker.name)}'")
+    variants.append(f"ym:ts:tracker=='{_escape_filter_value(tracker.tracking_id)}'")
+    return tuple(dict.fromkeys(variants))
 
 
 def _is_tracker_filter_rejected(exc: AppMetricaError) -> bool:
     text = str(exc)
     if "HTTP 400" not in text and "Incorrectly specified" not in text:
         return False
-    return "trackingId" in text or "filter" in text.lower() or "attribute" in text.lower()
+    return "tracker" in text.lower() or "filter" in text.lower() or "attribute" in text.lower()
 
 
 def _tracker_filter_error(
-    tracker_ref: str,
+    tracker: ResolvedTracker,
     last_error: AppMetricaError | None,
 ) -> AppMetricaError:
-    digits = _extract_tracking_digits(tracker_ref)
-    if not digits:
-        message = (
-            f"Не удалось распознать ID трекера «{tracker_ref}». "
-            "Укажите числовой ID из AppMetrica → Трекинг (колонка ID)."
-        )
-    else:
-        message = (
-            f"Не удалось отфильтровать данные по трекеру «{tracker_ref}» (ID {digits}). "
-            "Проверьте, что трекер относится к этому приложению AppMetrica."
-        )
+    label = tracker.name if tracker.name != tracker.tracking_id else tracker.tracking_id
+    message = (
+        f"Не удалось отфильтровать данные по трекеру «{label}» (ID {tracker.tracking_id}). "
+        "Проверьте, что трекер относится к этому приложению AppMetrica."
+    )
     if last_error:
         return AppMetricaError(f"{message} {last_error}")
     return AppMetricaError(message)
 
 
-def _tracker_dimension_matches(dimension: dict | str, tracker_ref: str) -> bool:
+def _tracker_dimension_matches(dimension: dict | str, tracker: ResolvedTracker) -> bool:
     if not isinstance(dimension, dict):
-        return str(dimension).strip() == tracker_ref.strip()
-    ref = tracker_ref.strip()
-    ref_lower = ref.lower()
+        value = str(dimension).strip()
+        return value in {tracker.tracking_id, tracker.name}
     name = str(dimension.get("name", "")).strip()
     dim_id = str(dimension.get("id", "")).strip()
-    if ref == dim_id or ref == name:
+    if tracker.tracking_id and tracker.tracking_id in {dim_id, name}:
         return True
-    if name and ref_lower == name.lower():
+    if tracker.name and tracker.name in {dim_id, name}:
         return True
-    if dim_id and ref == dim_id:
-        return True
-    if name and ref_lower in name.lower():
+    if name and tracker.name and name.lower() == tracker.name.lower():
         return True
     return False
 

@@ -34,7 +34,7 @@ class Client(Base):
     yandex_login: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     metrika_counter_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     appmetrica_application_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    appmetrica_tracking_id: Mapped[str] = mapped_column(String(64), default="")
+    appmetrica_tracking_id: Mapped[str] = mapped_column(String(512), default="")
     telegram_chat_id: Mapped[str] = mapped_column(String(64), default="")
     max_chat_id: Mapped[str] = mapped_column(String(64), default="")
     spend_alert_threshold: Mapped[float] = mapped_column(Float, default=0.0)
