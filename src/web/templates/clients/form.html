@@ -22,9 +22,9 @@
     <input type="number" name="appmetrica_application_id" value="{{ client.appmetrica_application_id if client and client.appmetrica_application_id else '' }}" placeholder="например 87654321">
   </label>
   <label>Трекер AppMetrica <span class="muted">(только эта трекинговая ссылка)</span>
-    <input type="text" name="appmetrica_tracking_id" value="{{ client.appmetrica_tracking_id if client and client.appmetrica_tracking_id else '' }}" placeholder="ID трекера (число) или название">
+    <input type="text" name="appmetrica_tracking_id" value="{{ client.appmetrica_tracking_id if client and client.appmetrica_tracking_id else '' }}" placeholder="например 1234567">
   </label>
-  <p class="muted form-hint">Числовой ID трекера — AppMetrica → Трекинг → список (колонка ID). Можно вставить название — сервис попробует найти трекер сам. Пусто = все установки/покупки.</p>
+  <p class="muted form-hint">Числовой ID трекера — AppMetrica → Трекинг → список (колонка ID). Пусто = все установки/покупки приложения.</p>
   <label>Telegram chat_id (если отличается от общего)
     <input type="text" name="telegram_chat_id" value="{{ client.telegram_chat_id if client else '' }}">
   </label>

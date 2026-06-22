@@ -22,11 +22,7 @@ BUILTIN_GOALS = (
     (BUILTIN_PURCHASE_KEY, BUILTIN_PURCHASE_LABEL),
 )
 
-_TRACKER_DIMENSIONS = (
-    "ym:ts:trackingId",
-    "ym:ts:tracker",
-    "ym:ts:trackingLink",
-)
+_TRACKER_DIMENSION = "ym:ts:trackingId"
 
 
 class AppMetricaError(RuntimeError):
@@ -91,13 +87,21 @@ class AppMetricaClient:
             )
 
         if event_key == BUILTIN_PURCHASE_KEY:
+            metrics = (
+                "ym:ts:purchaseEvents",
+                "ym:ts:inappPurchaseEvents",
+                "ym:ts:revenueEvents",
+                "ym:r:purchaseEvents",
+                "ym:r:inappPurchaseEvents",
+                "ym:r:revenueEvents",
+            ) if tracker_ref else (
+                "ym:r:purchaseEvents",
+                "ym:r:inappPurchaseEvents",
+                "ym:r:revenueEvents",
+            )
             return self._fetch_with_metric_fallbacks(
                 application_id,
-                (
-                    "ym:r:purchaseEvents",
-                    "ym:r:inappPurchaseEvents",
-                    "ym:r:revenueEvents",
-                ),
+                metrics,
                 date_from,
                 date_to,
                 tracking_ref=tracker_ref,
@@ -159,26 +163,38 @@ class AppMetricaClient:
         *,
         event_filter: str | None = None,
     ) -> dict[date, float]:
-        tracker_filter = _tracker_id_filter(tracker_ref)
-        combined = _combine_filters(event_filter, tracker_filter)
-        if combined:
+        last_error: AppMetricaError | None = None
+        for tracker_filter in _tracker_filter_variants(tracker_ref):
+            combined = _combine_filters(event_filter, tracker_filter)
             try:
                 return self._fetch_daily_counts_metric(
                     application_id, metric, combined, date_from, date_to
                 )
             except AppMetricaError as exc:
-                if not _is_bad_tracker_filter_error(exc):
+                if not _is_tracker_filter_rejected(exc):
                     raise
-                logger.warning("Tracker filter rejected by API, using dimension grouping: %s", exc)
+                last_error = exc
+                logger.warning(
+                    "Tracker filter %r rejected for %s: %s",
+                    tracker_filter,
+                    metric,
+                    exc,
+                )
 
-        return self._fetch_daily_counts_by_tracker_dimension(
-            application_id,
-            metric,
-            tracker_ref,
-            date_from,
-            date_to,
-            event_filter=event_filter,
-        )
+        if metric.startswith("ym:ts:"):
+            try:
+                return self._fetch_daily_counts_by_tracker_dimension(
+                    application_id,
+                    metric,
+                    tracker_ref,
+                    date_from,
+                    date_to,
+                    event_filter=event_filter,
+                )
+            except AppMetricaError as exc:
+                last_error = exc
+
+        raise _tracker_filter_error(tracker_ref, last_error)
 
     def _fetch_daily_counts_by_tracker_dimension(
         self,
@@ -190,46 +206,38 @@ class AppMetricaClient:
         *,
         event_filter: str | None = None,
     ) -> dict[date, float]:
+        if not metric.startswith("ym:ts:"):
+            raise AppMetricaError(
+                f"Метрика {metric} не поддерживает группировку по трекеру."
+            )
+
         date_dim = _date_dimension_for_metric(metric)
-        last_error: AppMetricaError | None = None
-        for tracker_dim in _TRACKER_DIMENSIONS:
-            params = {
-                "ids": application_id,
-                "metrics": metric,
-                "dimensions": f"{date_dim},{tracker_dim}",
-                "date1": date_from.isoformat(),
-                "date2": date_to.isoformat(),
-                "limit": 10000,
-                "accuracy": "full",
-            }
-            if event_filter:
-                params["filters"] = event_filter
-            try:
-                payload = self._get_stat_data(params)
-            except AppMetricaError as exc:
-                last_error = exc
+        params = {
+            "ids": application_id,
+            "metrics": metric,
+            "dimensions": f"{date_dim},{_TRACKER_DIMENSION}",
+            "date1": date_from.isoformat(),
+            "date2": date_to.isoformat(),
+            "limit": 10000,
+            "accuracy": "full",
+        }
+        if event_filter:
+            params["filters"] = event_filter
+
+        payload = self._get_stat_data(params)
+        result: dict[date, float] = {}
+        for row in payload.get("data") or []:
+            dimensions = row.get("dimensions") or []
+            metrics = row.get("metrics") or []
+            if len(dimensions) < 2 or not metrics:
                 continue
-
-            result: dict[date, float] = {}
-            for row in payload.get("data") or []:
-                dimensions = row.get("dimensions") or []
-                metrics = row.get("metrics") or []
-                if len(dimensions) < 2 or not metrics:
-                    continue
-                if not _tracker_dimension_matches(dimensions[1], tracker_ref):
-                    continue
-                day = _parse_dimension_date(dimensions[0])
-                if day is None:
-                    continue
-                result[day] = result.get(day, 0.0) + float(metrics[0] or 0)
-            return result
-
-        if last_error:
-            raise last_error
-        raise AppMetricaError(
-            f"Не удалось отфильтровать данные по трекеру «{tracker_ref}». "
-            "Укажите числовой ID трекера из AppMetrica → Трекинг."
-        )
+            if not _tracker_dimension_matches(dimensions[1], tracker_ref):
+                continue
+            day = _parse_dimension_date(dimensions[0])
+            if day is None:
+                continue
+            result[day] = result.get(day, 0.0) + float(metrics[0] or 0)
+        return result
 
     def _fetch_daily_counts_metric(
         self,
@@ -315,23 +323,50 @@ def _escape_filter_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def _tracker_id_filter(tracker_ref: str | None) -> str | None:
-    raw = (tracker_ref or "").strip()
-    if not raw:
-        return None
+def _extract_tracking_digits(tracker_ref: str) -> str:
+    raw = tracker_ref.strip()
     if raw.isdigit():
-        digits = raw
-    else:
-        match = re.search(r"\d{3,}", raw)
-        digits = match.group(0) if match else ""
+        return raw
+    match = re.search(r"\d{3,}", raw)
+    return match.group(0) if match else ""
+
+
+def _tracker_filter_variants(tracker_ref: str) -> tuple[str, ...]:
+    digits = _extract_tracking_digits(tracker_ref)
     if not digits:
-        return None
-    return f"ym:ts:trackingId=='{_escape_filter_value(digits)}'"
+        return ()
+    escaped = _escape_filter_value(digits)
+    return (
+        f"ym:ts:trackingId=='{escaped}'",
+        f"ym:ts:trackingId=={digits}",
+    )
 
 
-def _is_bad_tracker_filter_error(exc: AppMetricaError) -> bool:
+def _is_tracker_filter_rejected(exc: AppMetricaError) -> bool:
     text = str(exc)
-    return "HTTP 400" in text or "Incorrectly specified" in text
+    if "HTTP 400" not in text and "Incorrectly specified" not in text:
+        return False
+    return "trackingId" in text or "filter" in text.lower() or "attribute" in text.lower()
+
+
+def _tracker_filter_error(
+    tracker_ref: str,
+    last_error: AppMetricaError | None,
+) -> AppMetricaError:
+    digits = _extract_tracking_digits(tracker_ref)
+    if not digits:
+        message = (
+            f"Не удалось распознать ID трекера «{tracker_ref}». "
+            "Укажите числовой ID из AppMetrica → Трекинг (колонка ID)."
+        )
+    else:
+        message = (
+            f"Не удалось отфильтровать данные по трекеру «{tracker_ref}» (ID {digits}). "
+            "Проверьте, что трекер относится к этому приложению AppMetrica."
+        )
+    if last_error:
+        return AppMetricaError(f"{message} {last_error}")
+    return AppMetricaError(message)
 
 
 def _tracker_dimension_matches(dimension: dict | str, tracker_ref: str) -> bool:
