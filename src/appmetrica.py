@@ -67,16 +67,21 @@ class AppMetricaClient:
         event_key: str,
         date_from: date,
         date_to: date,
+        *,
+        tracking_id: str | None = None,
     ) -> dict[date, float]:
+        tracker_filter = _tracker_filter(tracking_id)
         if event_key == BUILTIN_INSTALL_KEY:
+            metrics = ("ym:ts:advInstallDevices",) if tracker_filter else (
+                "ym:i:installDevices",
+                "ym:ts:advInstallDevices",
+            )
             return self._fetch_with_metric_fallbacks(
                 application_id,
-                (
-                    "ym:i:installDevices",
-                    "ym:ts:advInstallDevices",
-                ),
+                metrics,
                 date_from,
                 date_to,
+                extra_filters=tracker_filter,
             )
 
         if event_key == BUILTIN_PURCHASE_KEY:
@@ -89,10 +94,14 @@ class AppMetricaClient:
                 ),
                 date_from,
                 date_to,
+                extra_filters=tracker_filter,
             )
 
-        metric, filters = _metric_spec(event_key)
-        return self._fetch_daily_counts_metric(application_id, metric, filters, date_from, date_to)
+        metric, event_filter = _metric_spec(event_key)
+        combined = _combine_filters(event_filter, tracker_filter)
+        return self._fetch_daily_counts_metric(
+            application_id, metric, combined, date_from, date_to
+        )
 
     def _fetch_with_metric_fallbacks(
         self,
@@ -100,12 +109,14 @@ class AppMetricaClient:
         metrics: tuple[str, ...],
         date_from: date,
         date_to: date,
+        *,
+        extra_filters: str | None = None,
     ) -> dict[date, float]:
         last_error: AppMetricaError | None = None
         for metric in metrics:
             try:
                 return self._fetch_daily_counts_metric(
-                    application_id, metric, None, date_from, date_to
+                    application_id, metric, extra_filters, date_from, date_to
                 )
             except AppMetricaError as exc:
                 last_error = exc
@@ -192,6 +203,29 @@ def _date_dimension_for_metric(metric: str) -> str:
     if metric.startswith("ym:ts:"):
         return "ym:ts:date"
     return "ym:ge:date"
+
+
+def _escape_filter_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _tracker_filter(tracking_id: str | None) -> str | None:
+    raw = (tracking_id or "").strip()
+    if not raw:
+        return None
+    escaped = _escape_filter_value(raw)
+    if raw.isdigit():
+        return f"ym:ts:trackingId=='{escaped}'"
+    return f"ym:ts:trackerName=='{escaped}'"
+
+
+def _combine_filters(*parts: str | None) -> str | None:
+    items = [part for part in parts if part]
+    if not items:
+        return None
+    if len(items) == 1:
+        return items[0]
+    return " AND ".join(items)
 
 
 def _parse_dimension_date(dimension: dict | str) -> date | None:

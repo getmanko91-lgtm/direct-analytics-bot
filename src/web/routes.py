@@ -616,6 +616,7 @@ def client_create(
     yandex_login: str = Form(...),
     metrika_counter_id: str = Form(""),
     appmetrica_application_id: str = Form(""),
+    appmetrica_tracking_id: str = Form(""),
     telegram_chat_id: str = Form(""),
     max_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
@@ -641,6 +642,7 @@ def client_create(
         yandex_login=yandex_login.strip(),
         metrika_counter_id=counter_id,
         appmetrica_application_id=appmetrica_id,
+        appmetrica_tracking_id=appmetrica_tracking_id.strip(),
         telegram_chat_id=telegram_chat_id.strip(),
         max_chat_id=max_chat_id.strip(),
         spend_alert_threshold=spend_alert_threshold,
@@ -687,6 +689,7 @@ def client_update(
     yandex_login: str = Form(...),
     metrika_counter_id: str = Form(""),
     appmetrica_application_id: str = Form(""),
+    appmetrica_tracking_id: str = Form(""),
     telegram_chat_id: str = Form(""),
     max_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
@@ -715,6 +718,7 @@ def client_update(
     client.name = name.strip()
     client.metrika_counter_id = int(metrika_counter_id) if metrika_counter_id.strip() else None
     client.appmetrica_application_id = int(appmetrica_application_id) if appmetrica_application_id.strip() else None
+    client.appmetrica_tracking_id = appmetrica_tracking_id.strip()
     client.telegram_chat_id = telegram_chat_id.strip()
     client.max_chat_id = max_chat_id.strip()
     client.spend_alert_threshold = spend_alert_threshold

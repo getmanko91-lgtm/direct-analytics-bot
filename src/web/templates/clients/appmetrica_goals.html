@@ -8,6 +8,9 @@
       Приложение:
       {% if client.appmetrica_application_id %}
       <code>{{ client.appmetrica_application_id }}</code>
+      {% if client.appmetrica_tracking_id %}
+      · трекер <code>{{ client.appmetrica_tracking_id }}</code>
+      {% endif %}
       {% else %}
       не указано — <a href="/clients/{{ client.id }}/edit">добавить в карточке</a>
       {% endif %}

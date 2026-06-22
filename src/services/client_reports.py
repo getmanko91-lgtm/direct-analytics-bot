@@ -220,10 +220,15 @@ def _apply_appmetrica_metrics(
         api = AppMetricaClient(token)
         install_by_day: dict[date, float] = {}
         purchase_by_day: dict[date, float] = {}
+        tracking = (client.appmetrica_tracking_id or "").strip() or None
         if install_key:
-            install_by_day = api.fetch_daily_counts(int(app_id), install_key, date_from, date_to)
+            install_by_day = api.fetch_daily_counts(
+                int(app_id), install_key, date_from, date_to, tracking_id=tracking
+            )
         if purchase_key:
-            purchase_by_day = api.fetch_daily_counts(int(app_id), purchase_key, date_from, date_to)
+            purchase_by_day = api.fetch_daily_counts(
+                int(app_id), purchase_key, date_from, date_to, tracking_id=tracking
+            )
     except AppMetricaError as exc:
         report.error = _append_report_note(report.error, str(exc))
         return
