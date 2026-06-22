@@ -32,8 +32,8 @@ class AppMetricaClient:
         self._token = (token or "").strip()
         if not self._token:
             raise AppMetricaError(
-            "Не задан токен AppMetrica. Задайте OAuth-токен в Настройках сервиса "
-            "(scope appmetrica:read) или в .env (YANDEX_APPMETRICA_TOKEN)."
+                "Не задан токен AppMetrica. Задайте OAuth-токен в Настройках сервиса "
+                "(scope appmetrica:read) или в .env (YANDEX_APPMETRICA_TOKEN)."
             )
 
     def fetch_events(self, application_id: int) -> list[str]:
@@ -68,21 +68,51 @@ class AppMetricaClient:
         date_from: date,
         date_to: date,
     ) -> dict[date, float]:
+        if event_key == BUILTIN_INSTALL_KEY:
+            return self._fetch_with_metric_fallbacks(
+                application_id,
+                (
+                    "ym:i:installDevices",
+                    "ym:ts:advInstallDevices",
+                ),
+                date_from,
+                date_to,
+            )
+
         if event_key == BUILTIN_PURCHASE_KEY:
-            last_error: AppMetricaError | None = None
-            for metric in ("ym:r:purchaseEvents", "ym:r:inappPurchaseEvents", "ym:ge:revenueEvents"):
-                try:
-                    return self._fetch_daily_counts_metric(
-                        application_id, metric, None, date_from, date_to
-                    )
-                except AppMetricaError as exc:
-                    last_error = exc
-            if last_error:
-                raise last_error
-            return {}
+            return self._fetch_with_metric_fallbacks(
+                application_id,
+                (
+                    "ym:r:purchaseEvents",
+                    "ym:r:inappPurchaseEvents",
+                    "ym:r:revenueEvents",
+                ),
+                date_from,
+                date_to,
+            )
 
         metric, filters = _metric_spec(event_key)
         return self._fetch_daily_counts_metric(application_id, metric, filters, date_from, date_to)
+
+    def _fetch_with_metric_fallbacks(
+        self,
+        application_id: int,
+        metrics: tuple[str, ...],
+        date_from: date,
+        date_to: date,
+    ) -> dict[date, float]:
+        last_error: AppMetricaError | None = None
+        for metric in metrics:
+            try:
+                return self._fetch_daily_counts_metric(
+                    application_id, metric, None, date_from, date_to
+                )
+            except AppMetricaError as exc:
+                last_error = exc
+                logger.warning("AppMetrica metric %s failed: %s", metric, exc)
+        if last_error:
+            raise last_error
+        return {}
 
     def _fetch_daily_counts_metric(
         self,
@@ -95,7 +125,7 @@ class AppMetricaClient:
         params = {
             "ids": application_id,
             "metrics": metric,
-            "dimensions": "ym:ge:date",
+            "dimensions": _date_dimension_for_metric(metric),
             "date1": date_from.isoformat(),
             "date2": date_to.isoformat(),
             "limit": 10000,
@@ -148,12 +178,20 @@ class AppMetricaClient:
 
 
 def _metric_spec(event_key: str) -> tuple[str, str | None]:
-    if event_key == BUILTIN_INSTALL_KEY:
-        return "ym:ge:installDevices", None
-    if event_key == BUILTIN_PURCHASE_KEY:
-        return "ym:r:purchaseEvents", None
     escaped = event_key.replace("\\", "\\\\").replace("'", "\\'")
     return "ym:ce:eventCount", f"ym:ce:eventLabel=='{escaped}'"
+
+
+def _date_dimension_for_metric(metric: str) -> str:
+    if metric.startswith("ym:ce:"):
+        return "ym:ce:date"
+    if metric.startswith("ym:i:"):
+        return "ym:i:date"
+    if metric.startswith("ym:r:"):
+        return "ym:r:date"
+    if metric.startswith("ym:ts:"):
+        return "ym:ts:date"
+    return "ym:ge:date"
 
 
 def _parse_dimension_date(dimension: dict | str) -> date | None:
