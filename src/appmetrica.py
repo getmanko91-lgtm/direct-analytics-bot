@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import requests
 from requests.exceptions import RequestException
@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 STAT_DATA_URL = "https://api.appmetrica.yandex.com/stat/v1/data"
 EVENTS_URL = "https://api.appmetrica.yandex.com/v1/traffic/sources/events"
 TRACKERS_URL = "https://api.appmetrica.yandex.com/management/v1/application/{application_id}/trackers"
+APPLICATIONS_URL = "https://api.appmetrica.yandex.com/management/v1/applications"
 _SERVE_HASH_RE = re.compile(r"/serve/(\d+)")
 
 BUILTIN_INSTALL_KEY = "__builtin_install__"
@@ -63,7 +64,11 @@ class AppMetricaClient:
         if response.status_code == 403:
             raise AppMetricaError(f"Нет доступа к приложению AppMetrica {application_id}.")
         if response.status_code == 404:
-            raise AppMetricaError(f"Приложение AppMetrica {application_id} не найдено.")
+            raise AppMetricaError(
+                f"Приложение AppMetrica {application_id} не найдено. "
+                "Проверьте поле «ID приложения» в карточке клиента — это ID из "
+                "Настроек приложения AppMetrica, а не ID трекера из раздела «Трекинг»."
+            )
         if response.status_code >= 400:
             raise AppMetricaError(f"AppMetrica API: HTTP {response.status_code}")
 
@@ -72,47 +77,226 @@ class AppMetricaClient:
         events = events_info.get("events") or []
         return sorted({str(name).strip() for name in events if str(name).strip()})
 
-    def resolve_tracker(self, application_id: int, tracker_ref: str) -> ResolvedTracker:
+    def resolve_application_and_tracker(
+        self,
+        application_id: int,
+        tracker_ref: str,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> tuple[int, ResolvedTracker]:
         ref = tracker_ref.strip()
         if not ref:
             raise AppMetricaError("Не задан трекер AppMetrica.")
 
         serve_hash = _extract_serve_hash(ref)
-        trackers = self._list_trackers(application_id)
-        ref_lower = ref.lower()
-        for tracker in trackers:
-            tracking_id = str(tracker.get("id", "")).strip()
-            name = str(tracker.get("name", "")).strip()
-            urls = " ".join(
-                str(tracker.get(key, ""))
-                for key in (
-                    "tracking_url",
-                    "url",
-                    "click_url",
-                    "tracking_link",
-                    "tracking_urls",
-                    "impression_url",
-                )
-            )
-            if not tracking_id:
-                continue
-            if ref == tracking_id or ref == name or ref_lower == name.lower():
-                return ResolvedTracker(tracking_id, name or tracking_id)
-            if serve_hash and serve_hash in urls:
-                return ResolvedTracker(tracking_id, name or tracking_id)
 
-        if ref.isdigit() and len(ref) <= 12:
-            return ResolvedTracker(ref, ref)
+        swapped = self._find_tracker_id_used_as_application_id(
+            application_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        if swapped:
+            return swapped
+
+        for app_id in self._candidate_application_ids(application_id):
+            resolved = self._find_tracker_in_app(
+                app_id,
+                ref,
+                serve_hash,
+                date_from=date_from,
+                date_to=date_to,
+            )
+            if resolved:
+                return app_id, resolved
+
+        if ref.isdigit() and len(ref) <= 12 and not serve_hash:
+            app_id = self._find_application_for_tracker_id(
+                ref,
+                date_from=date_from,
+                date_to=date_to,
+            )
+            return app_id or application_id, ResolvedTracker(ref, ref)
 
         if serve_hash:
             raise AppMetricaError(
-                f"Трекер с ссылкой /serve/{serve_hash} не найден в приложении AppMetrica {application_id}. "
-                "Проверьте ID приложения и токен AppMetrica."
+                f"Трекер с ссылкой /serve/{serve_hash} не найден среди доступных приложений. "
+                f"Проверьте ID приложения (сейчас {application_id}) и токен AppMetrica."
             )
         raise AppMetricaError(
-            f"Трекер «{ref}» не найден в приложении AppMetrica {application_id}. "
-            "Укажите числовой ID трекера или полную трекинговую ссылку из AppMetrica → Трекинг."
+            f"Трекер «{ref}» не найден. "
+            f"Проверьте ID приложения AppMetrica (сейчас {application_id}) и трекинговую ссылку."
         )
+
+    def resolve_tracker(
+        self,
+        application_id: int,
+        tracker_ref: str,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> ResolvedTracker:
+        _, tracker = self.resolve_application_and_tracker(
+            application_id,
+            tracker_ref,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        return tracker
+
+    def _find_tracker_in_app(
+        self,
+        application_id: int,
+        tracker_ref: str,
+        serve_hash: str,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> ResolvedTracker | None:
+        return _match_tracker_in_list(
+            self._list_trackers_for_app(
+                application_id,
+                date_from=date_from,
+                date_to=date_to,
+            ),
+            tracker_ref,
+            serve_hash,
+        )
+
+    def _find_application_for_tracker_id(
+        self,
+        tracker_id: str,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> int | None:
+        for app_id in self._candidate_application_ids(0):
+            for tracker in self._list_trackers_for_app(
+                app_id,
+                date_from=date_from,
+                date_to=date_to,
+            ):
+                if str(tracker.get("id", "")).strip() == tracker_id:
+                    return app_id
+        return None
+
+    def _find_tracker_id_used_as_application_id(
+        self,
+        application_id: int,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> tuple[int, ResolvedTracker] | None:
+        tracker_id = str(application_id)
+        for app_id in self._candidate_application_ids(application_id):
+            for tracker in self._list_trackers_for_app(
+                app_id,
+                date_from=date_from,
+                date_to=date_to,
+            ):
+                if str(tracker.get("id", "")).strip() == tracker_id:
+                    name = str(tracker.get("name", "")).strip() or tracker_id
+                    return app_id, ResolvedTracker(tracker_id, name)
+        return None
+
+    def _candidate_application_ids(self, preferred_id: int) -> list[int]:
+        ids: list[int] = []
+        if preferred_id:
+            ids.append(preferred_id)
+        for app in self._list_applications():
+            app_id = _application_id_from_payload(app)
+            if app_id is not None and app_id not in ids:
+                ids.append(app_id)
+        return ids
+
+    def _list_trackers_for_app(
+        self,
+        application_id: int,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[dict]:
+        trackers = self._list_trackers_optional(application_id)
+        if trackers:
+            return trackers
+        return self._list_trackers_via_stat(
+            application_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+    def _list_trackers_via_stat(
+        self,
+        application_id: int,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[dict]:
+        end = date_to or date.today()
+        start = date_from or (end - timedelta(days=90))
+        if not self._stat_api_accessible(application_id, start, end):
+            return []
+
+        params = {
+            "ids": application_id,
+            "metrics": "ym:ts:advInstallDevices",
+            "dimensions": "ym:ts:tracker",
+            "date1": start.isoformat(),
+            "date2": end.isoformat(),
+            "limit": 10000,
+            "accuracy": "full",
+        }
+        try:
+            payload = self._get_stat_data(params)
+        except AppMetricaError:
+            return []
+
+        trackers: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for row in payload.get("data") or []:
+            dimensions = row.get("dimensions") or []
+            if not dimensions:
+                continue
+            dim = dimensions[0]
+            if isinstance(dim, dict):
+                tracking_id = str(dim.get("id", "")).strip()
+                name = str(dim.get("name", "")).strip()
+            else:
+                tracking_id = str(dim).strip()
+                name = tracking_id
+            if not tracking_id and not name:
+                continue
+            key = (tracking_id, name)
+            if key in seen:
+                continue
+            seen.add(key)
+            trackers.append(
+                {
+                    "id": tracking_id or name,
+                    "name": name or tracking_id,
+                }
+            )
+        return trackers
+
+    def _stat_api_accessible(self, application_id: int, date_from: date, date_to: date) -> bool:
+        try:
+            self._get_stat_data(
+                {
+                    "ids": application_id,
+                    "metrics": "ym:i:installDevices",
+                    "dimensions": "ym:i:date",
+                    "date1": date_from.isoformat(),
+                    "date2": date_to.isoformat(),
+                    "limit": 1,
+                    "accuracy": "full",
+                }
+            )
+            return True
+        except AppMetricaError as exc:
+            text = str(exc).lower()
+            if "http 404" in text or "не найдено" in text or "not found" in text:
+                return False
+            raise
 
     def fetch_daily_counts(
         self,
@@ -124,9 +308,14 @@ class AppMetricaClient:
         tracking_id: str | None = None,
     ) -> dict[date, float]:
         tracker_ref = (tracking_id or "").strip() or None
-        resolved_tracker = (
-            self.resolve_tracker(application_id, tracker_ref) if tracker_ref else None
-        )
+        resolved_tracker: ResolvedTracker | None = None
+        if tracker_ref:
+            application_id, resolved_tracker = self.resolve_application_and_tracker(
+                application_id,
+                tracker_ref,
+                date_from=date_from,
+                date_to=date_to,
+            )
         if event_key == BUILTIN_INSTALL_KEY:
             metrics = ("ym:ts:advInstallDevices",) if tracker_ref else (
                 "ym:i:installDevices",
@@ -351,6 +540,40 @@ class AppMetricaClient:
 
         return response.json()
 
+    def _list_trackers_optional(self, application_id: int) -> list[dict]:
+        try:
+            return self._list_trackers(application_id)
+        except AppMetricaError as exc:
+            if "не найдено" in str(exc) or "HTTP 404" in str(exc):
+                logger.warning("AppMetrica trackers unavailable for app %s: %s", application_id, exc)
+                return []
+            raise
+
+    def _list_applications(self) -> list[dict]:
+        try:
+            response = requests.get(
+                APPLICATIONS_URL,
+                params={"limit": 1000},
+                headers=self._headers(),
+                timeout=60,
+            )
+        except RequestException as exc:
+            raise AppMetricaError("Не удалось подключиться к Management API AppMetrica") from exc
+
+        if response.status_code == 401:
+            raise AppMetricaError("Недействительный токен для API AppMetrica.")
+        if response.status_code >= 400:
+            logger.warning("AppMetrica applications list failed: HTTP %s", response.status_code)
+            return []
+
+        payload = response.json()
+        applications = payload.get("applications")
+        if isinstance(applications, list):
+            return applications
+        if isinstance(payload, list):
+            return payload
+        return []
+
     def _list_trackers(self, application_id: int) -> list[dict]:
         url = TRACKERS_URL.format(application_id=application_id)
         try:
@@ -368,7 +591,8 @@ class AppMetricaClient:
         if response.status_code == 403:
             raise AppMetricaError(f"Нет доступа к приложению AppMetrica {application_id}.")
         if response.status_code == 404:
-            raise AppMetricaError(f"Приложение AppMetrica {application_id} не найдено.")
+            logger.warning("AppMetrica trackers 404 for application %s", application_id)
+            return []
         if response.status_code >= 400:
             detail = ""
             try:
@@ -411,6 +635,64 @@ def _date_dimension_for_metric(metric: str) -> str:
 
 def _escape_filter_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _application_id_from_payload(app: dict) -> int | None:
+    for key in ("id", "application_id", "app_id"):
+        value = app.get(key)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _tracker_urls_blob(tracker: dict) -> str:
+    parts: list[str] = []
+
+    def add(value: object) -> None:
+        if isinstance(value, str) and value:
+            parts.append(value)
+        elif isinstance(value, list):
+            for item in value:
+                add(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                add(item)
+
+    for key in (
+        "tracking_url",
+        "url",
+        "click_url",
+        "tracking_link",
+        "impression_url",
+        "tracking_urls",
+        "urls",
+    ):
+        add(tracker.get(key))
+    return " ".join(parts)
+
+
+def _match_tracker_in_list(
+    trackers: list[dict],
+    tracker_ref: str,
+    serve_hash: str,
+) -> ResolvedTracker | None:
+    ref = tracker_ref.strip()
+    ref_lower = ref.lower()
+    for tracker in trackers:
+        tracking_id = str(tracker.get("id", "")).strip()
+        name = str(tracker.get("name", "")).strip()
+        urls = _tracker_urls_blob(tracker)
+        if not tracking_id:
+            continue
+        if ref == tracking_id or ref == name or ref_lower == name.lower():
+            return ResolvedTracker(tracking_id, name or tracking_id)
+        if serve_hash and serve_hash in urls:
+            return ResolvedTracker(tracking_id, name or tracking_id)
+    return None
 
 
 def _extract_serve_hash(tracker_ref: str) -> str:
