@@ -217,7 +217,8 @@ def _apply_appmetrica_metrics(
         return
 
     try:
-        api = AppMetricaClient(token)
+        hints = _other_appmetrica_application_ids(db, client.id)
+        api = AppMetricaClient(token, application_id_hints=hints)
         install_by_day: dict[date, float] = {}
         purchase_by_day: dict[date, float] = {}
         tracking = (client.appmetrica_tracking_id or "").strip() or None
@@ -246,6 +247,16 @@ def _apply_appmetrica_metrics(
     report.total = WeekMetrics()
     for week in report.week_metrics:
         report.total.add(week)
+
+
+def _other_appmetrica_application_ids(db: Session, client_id: int) -> tuple[int, ...]:
+    rows = (
+        db.query(Client.appmetrica_application_id)
+        .filter(Client.id != client_id, Client.appmetrica_application_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    return tuple(sorted({int(row[0]) for row in rows if row[0]}))
 
 
 def _append_report_note(existing: str | None, note: str) -> str:
