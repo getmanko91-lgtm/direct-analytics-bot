@@ -41,7 +41,7 @@ def fetch_client_balances(token: str, logins: list[str]) -> dict[str, ClientBala
                 result[login] = ClientBalance(amount=None, error="Баланс не найден в ответе API")
         return result
 
-    return get_or_set(cache_key, _load, ttl_seconds=120)
+    return get_or_set(cache_key, _load, ttl_seconds=300)
 
 
 def format_balance(amount: float) -> str:

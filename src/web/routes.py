@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
@@ -30,6 +30,7 @@ from src.services.cpa_style import (
 )
 from src.services.appmetrica_sync import sync_client_appmetrica_goals
 from src.services.client_reports import fetch_client_reports_cached, format_period, metrics_to_display
+from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.client_reports_export import build_client_reports_xlsx, export_filename as client_reports_export_filename
 from src.services.kpi_table import fetch_kpi_table_cached
 from src.services.app_settings import get_setting, set_setting
@@ -444,27 +445,34 @@ def clients_list(
         .order_by(Client.name)
         .all()
     )
-    balances = fetch_client_balances(settings.yandex_token, [c.yandex_login for c in clients])
-    client_rows = []
-    for client in clients:
-        balance = balances.get(client.yandex_login)
-        client_rows.append(
-            {
-                "client": client,
-                "balance_amount": format_balance(balance.amount) if balance and balance.amount is not None else None,
-                "balance_low": bool(balance and balance.is_low),
-                "balance_error": balance.error if balance else None,
-            }
-        )
     return templates.TemplateResponse(
         request,
         "clients/list.html",
         {
             "user": user,
-            "client_rows": client_rows,
+            "clients": clients,
             "message": request.query_params.get("message"),
         },
     )
+
+
+@router.get("/clients/balances")
+def clients_balances_json(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    clients = db.query(Client).order_by(Client.name).all()
+    balances = fetch_client_balances(settings.yandex_token, [c.yandex_login for c in clients])
+    payload: dict[str, dict[str, object]] = {}
+    for client in clients:
+        balance = balances.get(client.yandex_login)
+        payload[client.yandex_login] = {
+            "amount": format_balance(balance.amount) if balance and balance.amount is not None else None,
+            "low": bool(balance and balance.is_low),
+            "error": balance.error if balance else None,
+        }
+    return JSONResponse(payload)
 
 
 @router.get("/clients/{client_id}/analytics", response_class=HTMLResponse)

@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "macros/balance.html" import balance_badge %}
 {% block title %}Клиенты{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -11,7 +10,7 @@
 <div class="alert alert-success">{{ message }}</div>
 {% endif %}
 
-{% if client_rows %}
+{% if clients %}
 <table class="table">
   <thead>
     <tr>
@@ -25,11 +24,10 @@
     </tr>
   </thead>
   <tbody>
-    {% for row in client_rows %}
-    {% set client = row.client %}
+    {% for client in clients %}
     <tr>
       <td><strong>{{ client.name }}</strong></td>
-      <td>{{ balance_badge(row.balance_amount, row.balance_low, row.balance_error) or '—' }}</td>
+      <td class="balance-cell" data-login="{{ client.yandex_login }}"><span class="muted">…</span></td>
       <td><code>{{ client.yandex_login }}</code></td>
       <td>{{ client.metrika_counter_id or '—' }}</td>
       <td>{{ client.goals|selectattr('is_selected')|list|length }}</td>
@@ -48,6 +46,48 @@
     {% endfor %}
   </tbody>
 </table>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  fetch('/clients/balances', { credentials: 'same-origin' })
+    .then(function (response) { return response.ok ? response.json() : {}; })
+    .then(function (data) {
+      document.querySelectorAll('.balance-cell').forEach(function (cell) {
+        var login = cell.dataset.login;
+        var balance = data[login];
+        if (!balance) {
+          cell.textContent = '—';
+          return;
+        }
+        if (balance.amount) {
+          var span = document.createElement('span');
+          span.className = 'balance-indicator' + (balance.low ? ' balance-low' : '');
+          if (balance.low) {
+            span.title = 'Баланс ниже 10 000 ₽';
+            var dot = document.createElement('span');
+            dot.className = 'balance-dot';
+            dot.setAttribute('aria-hidden', 'true');
+            span.appendChild(dot);
+          }
+          span.appendChild(document.createTextNode(balance.amount + ' ₽'));
+          cell.replaceChildren(span);
+        } else if (balance.error) {
+          var err = document.createElement('span');
+          err.className = 'balance-indicator balance-error';
+          err.title = balance.error;
+          err.textContent = 'баланс ?';
+          cell.replaceChildren(err);
+        } else {
+          cell.textContent = '—';
+        }
+      });
+    })
+    .catch(function () {
+      document.querySelectorAll('.balance-cell').forEach(function (cell) {
+        cell.textContent = '—';
+      });
+    });
+});
+</script>
 {% else %}
 <p class="muted">Нет клиентов. <a href="/clients/new">Добавить</a></p>
 {% endif %}
