@@ -234,12 +234,15 @@ def _apply_appmetrica_metrics(
     try:
         install_by_day: dict[date, float] = {}
         purchase_by_day: dict[date, float] = {}
+        install_applied = False
+        purchase_applied = False
         tracking = (client.appmetrica_tracking_id or "").strip() or None
         if install_key:
             try:
                 install_by_day = _fetch_appmetrica_daily_cached(
                     appmetrica_api, int(app_id), install_key, tracking, date_from, date_to
                 )
+                install_applied = True
             except AppMetricaError as exc:
                 report.error = _append_report_note(
                     report.error, f"Установки AppMetrica: {exc}"
@@ -249,6 +252,7 @@ def _apply_appmetrica_metrics(
                 purchase_by_day = _fetch_appmetrica_daily_cached(
                     appmetrica_api, int(app_id), purchase_key, tracking, date_from, date_to
                 )
+                purchase_applied = True
             except AppMetricaError as exc:
                 report.error = _append_report_note(
                     report.error, f"Покупки AppMetrica: {exc}"
@@ -257,14 +261,21 @@ def _apply_appmetrica_metrics(
         report.error = _append_report_note(report.error, str(exc))
         return
 
+    if not install_applied and not purchase_applied:
+        return
+
     for week_idx, (week_from, week_to) in enumerate(report.weeks):
         metrics = report.week_metrics[week_idx]
-        metrics.app_installs = 0.0
-        metrics.app_purchases = 0.0
+        if install_applied:
+            metrics.app_installs = 0.0
+        if purchase_applied:
+            metrics.app_purchases = 0.0
         current = week_from
         while current <= week_to:
-            metrics.app_installs += install_by_day.get(current, 0.0)
-            metrics.app_purchases += purchase_by_day.get(current, 0.0)
+            if install_applied:
+                metrics.app_installs += install_by_day.get(current, 0.0)
+            if purchase_applied:
+                metrics.app_purchases += purchase_by_day.get(current, 0.0)
             current += timedelta(days=1)
 
     report.total = WeekMetrics()
@@ -307,7 +318,7 @@ def _fetch_appmetrica_daily_cached(
             date_to,
             tracking_id=tracking_id,
         ),
-        ttl_seconds=CACHE_TTL_SECONDS,
+        ttl_seconds=CACHE_TTL_SECONDS * 3,
     )
 
 

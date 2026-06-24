@@ -25,7 +25,7 @@
   <label>Трекер AppMetrica <span class="muted">(только эта трекинговая ссылка)</span>
     <input type="text" name="appmetrica_tracking_id" value="{{ client.appmetrica_tracking_id if client and client.appmetrica_tracking_id else '' }}" placeholder="например ЯД Ковров">
   </label>
-  <p class="muted form-hint"><strong>Рекомендуется:</strong> <strong>название трекера</strong> из AppMetrica → Трекинг (колонка «Название», например «ЯД Ковров») или числовой ID, если он виден. Не вставляйте полную ссылку <code>redirect.appmetrica.yandex.com/serve/…</code> — число из <code>/serve/</code> это не ID трекера. Пусто = все установки/покупки приложения.</p>
+  <p class="muted form-hint"><strong>Рекомендуется:</strong> название трекера из AppMetrica → Трекинг (например «ЯД Ковров») или число из ссылки <code>/serve/317979283836396694</code> (это tracking_id). Полную URL вставлять не нужно. Пусто = все установки/покупки приложения.</p>
   <label>Telegram chat_id (если отличается от общего)
     <input type="text" name="telegram_chat_id" value="{{ client.telegram_chat_id if client else '' }}">
   </label>

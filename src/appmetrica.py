@@ -22,10 +22,10 @@ LOGS_STATUS_URL = "https://api.appmetrica.yandex.com/logs/v1/export/{request_id}
 LOGS_DOWNLOAD_URL = (
     "https://api.appmetrica.yandex.com/logs/v1/export/{request_id}/part/{part}/download.json"
 )
-_LOGS_MAX_WAIT_SECONDS = 60
+_LOGS_MAX_WAIT_SECONDS = 120
 _LOGS_POLL_INTERVAL = 3
-_LOGS_REQUEST_TIMEOUT = 45
-_LOGS_CHUNK_DAYS = 7
+_LOGS_REQUEST_TIMEOUT = 60
+_LOGS_CHUNK_DAYS = 14
 
 _INSTALL_DIMENSION_PROBES = (
     ("ym:i:installDevices", "ym:i:trackerName"),
@@ -130,7 +130,7 @@ class AppMetricaClient:
             raise AppMetricaError("Не задан трекер AppMetrica.")
 
         serve_hash = _extract_serve_hash(ref)
-        if not serve_hash and not (ref.isdigit() and len(ref) <= 12):
+        if not serve_hash:
             matched = _match_tracker_in_list(
                 self._list_trackers_optional(application_id),
                 ref,
@@ -138,14 +138,6 @@ class AppMetricaClient:
             )
             if matched:
                 return application_id, matched
-            discovered = self._discover_tracker_by_name(
-                application_id,
-                ref,
-                date_from=date_from,
-                date_to=date_to,
-            )
-            if discovered:
-                return application_id, discovered
             return application_id, ResolvedTracker(ref, ref)
 
         swapped = self._find_tracker_id_used_as_application_id(
@@ -709,31 +701,48 @@ class AppMetricaClient:
         event_key: str | None = None,
     ) -> dict[date, float]:
         last_error: AppMetricaError | None = None
-        empty_result: dict[date, float] | None = None
 
-        if event_key != BUILTIN_PURCHASE_KEY and not metric.startswith("ym:r:"):
-            for probe_metric, tracker_dim in _INSTALL_DIMENSION_PROBES:
-                try:
-                    result = self._fetch_daily_counts_grouped_by_tracker(
-                        application_id,
-                        probe_metric,
-                        tracker_dim,
-                        tracker,
-                        date_from,
-                        date_to,
-                        event_filter=event_filter,
-                    )
-                    if result:
-                        return result
-                    empty_result = result
-                except AppMetricaError as exc:
+        if event_key == BUILTIN_PURCHASE_KEY or metric.startswith("ym:r:"):
+            try:
+                return self._fetch_tracked_purchases_from_logs(
+                    application_id,
+                    tracker,
+                    date_from,
+                    date_to,
+                )
+            except AppMetricaError as exc:
+                last_error = exc
+        else:
+            try:
+                return self._fetch_tracked_daily_counts_from_logs(
+                    application_id,
+                    tracker,
+                    date_from,
+                    date_to,
+                    event_key=event_key,
+                    metric=metric,
+                )
+            except AppMetricaError as exc:
+                last_error = exc
+
+        for probe_metric, tracker_dim in _INSTALL_DIMENSION_PROBES:
+            if event_key == BUILTIN_PURCHASE_KEY or metric.startswith("ym:r:"):
+                break
+            try:
+                result = self._fetch_daily_counts_grouped_by_tracker(
+                    application_id,
+                    probe_metric,
+                    tracker_dim,
+                    tracker,
+                    date_from,
+                    date_to,
+                    event_filter=event_filter,
+                )
+                if result:
+                    return result
+            except AppMetricaError as exc:
+                if not _is_invalid_tracker_attribute_error(exc):
                     last_error = exc
-                    logger.warning(
-                        "Tracker dimension %s via %s failed: %s",
-                        tracker_dim,
-                        probe_metric,
-                        exc,
-                    )
 
         if event_key == BUILTIN_PURCHASE_KEY or metric.startswith(("ym:r:", "ym:ts:")):
             for probe_metric, tracker_dim in _PURCHASE_DIMENSION_PROBES:
@@ -749,32 +758,9 @@ class AppMetricaClient:
                     )
                     if result:
                         return result
-                    empty_result = result
                 except AppMetricaError as exc:
-                    last_error = exc
-                    logger.warning(
-                        "Purchase tracker dimension %s via %s failed: %s",
-                        tracker_dim,
-                        probe_metric,
-                        exc,
-                    )
-
-        prefix = _metric_prefix(metric)
-        if prefix in _TRACKER_DIMENSIONS_BY_PREFIX:
-            try:
-                result = self._fetch_daily_counts_by_tracker_dimension(
-                    application_id,
-                    metric,
-                    tracker,
-                    date_from,
-                    date_to,
-                    event_filter=event_filter,
-                )
-                if result:
-                    return result
-                empty_result = result
-            except AppMetricaError as exc:
-                last_error = exc
+                    if not _is_invalid_tracker_attribute_error(exc):
+                        last_error = exc
 
         for tracker_filter in _tracker_filter_variants(tracker, metric):
             combined = _combine_filters(event_filter, tracker_filter)
@@ -783,45 +769,13 @@ class AppMetricaClient:
                     application_id, metric, combined, date_from, date_to
                 )
             except AppMetricaError as exc:
+                if _is_invalid_tracker_attribute_error(exc):
+                    continue
                 if not _is_tracker_filter_rejected(exc):
                     raise
                 last_error = exc
-                logger.warning(
-                    "Tracker filter %r rejected for %s: %s",
-                    tracker_filter,
-                    metric,
-                    exc,
-                )
 
-        can_use_install_logs = event_key != BUILTIN_PURCHASE_KEY and not metric.startswith("ym:r:")
-        if can_use_install_logs:
-            try:
-                return self._fetch_tracked_daily_counts_from_logs(
-                    application_id,
-                    tracker,
-                    date_from,
-                    date_to,
-                    event_key=event_key,
-                    metric=metric,
-                )
-            except AppMetricaError as exc:
-                last_error = exc
-
-        if event_key == BUILTIN_PURCHASE_KEY or metric.startswith("ym:r:"):
-            try:
-                return self._fetch_tracked_purchases_from_logs(
-                    application_id,
-                    tracker,
-                    date_from,
-                    date_to,
-                )
-            except AppMetricaError as exc:
-                last_error = exc
-
-        if empty_result is not None:
-            return empty_result
-
-        available = self._list_tracker_names_from_stat(
+        available = self._list_tracker_names_from_logs(
             application_id, date_from, date_to
         )
         raise _tracker_filter_error(tracker, last_error, available_names=available)
@@ -1021,7 +975,7 @@ class AppMetricaClient:
         self._install_log_chunk_cache[cache_key] = rows
         return rows
 
-    def _list_tracker_names_from_stat(
+    def _list_tracker_names_from_logs(
         self,
         application_id: int,
         date_from: date,
@@ -1029,30 +983,18 @@ class AppMetricaClient:
     ) -> list[str]:
         names: list[str] = []
         seen: set[str] = set()
-        for probe_metric, tracker_dim in _INSTALL_DIMENSION_PROBES:
-            params = {
-                "ids": application_id,
-                "metrics": probe_metric,
-                "dimensions": tracker_dim,
-                "date1": date_from.isoformat(),
-                "date2": date_to.isoformat(),
-                "limit": 100,
-                "accuracy": "full",
-            }
-            try:
-                payload = self._get_stat_data(params)
-            except AppMetricaError:
+        sample_end = min(date_to, date_from + timedelta(days=_LOGS_CHUNK_DAYS - 1))
+        try:
+            rows = self._fetch_install_log_rows(application_id, date_from, sample_end)
+        except AppMetricaError:
+            return names
+        for row in rows:
+            name = str(row.get("tracker_name", "")).strip()
+            if not name or name in seen:
                 continue
-            for row in payload.get("data") or []:
-                dimensions = row.get("dimensions") or []
-                if not dimensions:
-                    continue
-                for value in _tracker_dimension_values(dimensions[0]):
-                    if value in seen:
-                        continue
-                    seen.add(value)
-                    names.append(value)
-        return names
+            seen.add(name)
+            names.append(name)
+        return sorted(names)[:20]
 
     def _fetch_logs_export(self, log_type: str, params: dict) -> dict:
         url = LOGS_EXPORT_URL.format(log_type=log_type)
@@ -1440,6 +1382,11 @@ def _tracker_filter_values(tracker: ResolvedTracker) -> tuple[str, ...]:
     if tracking_id and tracking_id != tracker.name and tracking_id.isdigit():
         values.append(tracking_id)
     return tuple(dict.fromkeys(values))
+
+
+def _is_invalid_tracker_attribute_error(exc: AppMetricaError) -> bool:
+    text = str(exc).lower()
+    return "4001" in text or "trackername" in text.replace("_", "")
 
 
 def _tracker_filter_variants(tracker: ResolvedTracker, metric: str = "") -> tuple[str, ...]:
