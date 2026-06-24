@@ -22,6 +22,9 @@ LOGS_STATUS_URL = "https://api.appmetrica.yandex.com/logs/v1/export/{request_id}
 LOGS_DOWNLOAD_URL = (
     "https://api.appmetrica.yandex.com/logs/v1/export/{request_id}/part/{part}/download.json"
 )
+_LOGS_MAX_WAIT_SECONDS = 20
+_LOGS_POLL_INTERVAL = 2
+_LOGS_REQUEST_TIMEOUT = 30
 _SERVE_HASH_RE = re.compile(r"/serve/(\d+)")
 
 _TRACKER_FILTER_ATTRIBUTES = (
@@ -66,6 +69,7 @@ class AppMetricaClient:
     ) -> None:
         self._token = (token or "").strip()
         self._application_id_hints = application_id_hints
+        self._applications_cache: list[dict] | None = None
         if not self._token:
             raise AppMetricaError(
                 "Не задан токен AppMetrica. Задайте OAuth-токен в Настройках сервиса "
@@ -114,6 +118,8 @@ class AppMetricaClient:
             raise AppMetricaError("Не задан трекер AppMetrica.")
 
         serve_hash = _extract_serve_hash(ref)
+        if not serve_hash and not (ref.isdigit() and len(ref) <= 12):
+            return application_id, ResolvedTracker(ref, ref)
 
         swapped = self._find_tracker_id_used_as_application_id(
             application_id,
@@ -175,17 +181,6 @@ class AppMetricaClient:
         if resolved:
             return resolved
 
-        if not serve_hash and not (ref.isdigit() and len(ref) <= 12):
-            resolved_logs = self._try_resolve_by_name_logs(
-                application_id,
-                ref,
-                date_from=date_from,
-                date_to=date_to,
-            )
-            if resolved_logs:
-                return resolved_logs
-            return application_id, ResolvedTracker(ref, ref)
-
         end = date_to or date.today()
         start = date_from or (end - timedelta(days=90))
         for app_id in self._candidate_application_ids(application_id):
@@ -196,44 +191,6 @@ class AppMetricaClient:
             f"Трекер «{ref}» не найден. "
             f"Проверьте ID приложения AppMetrica (сейчас {application_id}) и название трекера."
         )
-
-    def _try_resolve_by_name_logs(
-        self,
-        application_id: int,
-        tracker_name: str,
-        *,
-        date_from: date | None = None,
-        date_to: date | None = None,
-    ) -> tuple[int, ResolvedTracker] | None:
-        ref = tracker_name.strip()
-        if not ref or _extract_serve_hash(ref):
-            return None
-
-        end = date_to or date.today()
-        start = date_from or (end - timedelta(days=30))
-        params = {
-            "application_id": application_id,
-            "date_since": f"{start.isoformat()} 00:00:00",
-            "date_until": f"{end.isoformat()} 23:59:59",
-            "fields": "tracker_name,tracking_id",
-            "tracker_name": ref,
-            "skip_unavailable_shards": "true",
-        }
-        try:
-            payload = self._fetch_logs_export("installations", params)
-        except AppMetricaError:
-            return None
-
-        for row in payload.get("data") or []:
-            name = str(row.get("tracker_name", "")).strip()
-            tracking_id = str(row.get("tracking_id", "")).strip()
-            if not name and not tracking_id:
-                continue
-            if _tracker_names_match(ref, name) or ref in {name, tracking_id}:
-                key = tracking_id or name
-                label = name or tracking_id
-                return application_id, ResolvedTracker(key, label)
-        return None
 
     def resolve_tracker(
         self,
@@ -682,27 +639,6 @@ class AppMetricaClient:
     ) -> dict[date, float]:
         last_error: AppMetricaError | None = None
 
-        if (
-            tracker.name
-            and (
-                event_key == BUILTIN_INSTALL_KEY
-                or metric.startswith("ym:i:")
-                or metric.startswith("ym:ts:")
-            )
-        ):
-            try:
-                return self._fetch_tracked_daily_counts_from_logs(
-                    application_id,
-                    tracker,
-                    date_from,
-                    date_to,
-                    event_key=event_key,
-                    metric=metric,
-                )
-            except AppMetricaError as exc:
-                last_error = exc
-                logger.warning("Logs API tracker filter failed for %s: %s", metric, exc)
-
         for tracker_filter in _tracker_filter_variants(tracker, metric):
             combined = _combine_filters(event_filter, tracker_filter)
             try:
@@ -821,6 +757,11 @@ class AppMetricaClient:
                 "Logs API не поддерживает фильтрацию покупок по трекеру."
             )
 
+        if (date_to - date_from).days > 13:
+            raise AppMetricaError(
+                "Logs API не используется для периода длиннее 14 дней."
+            )
+
         params_base = {
             "application_id": application_id,
             "date_since": f"{date_from.isoformat()} 00:00:00",
@@ -865,17 +806,15 @@ class AppMetricaClient:
 
     def _fetch_logs_export(self, log_type: str, params: dict) -> dict:
         url = LOGS_EXPORT_URL.format(log_type=log_type)
-        max_wait_seconds = 120
-        poll_interval = 2
         waited = 0
 
-        while waited <= max_wait_seconds:
+        while waited <= _LOGS_MAX_WAIT_SECONDS:
             try:
                 response = requests.get(
                     url,
                     params=params,
                     headers=self._headers(),
-                    timeout=120,
+                    timeout=_LOGS_REQUEST_TIMEOUT,
                 )
             except RequestException as exc:
                 raise AppMetricaError("Не удалось подключиться к Logs API AppMetrica") from exc
@@ -883,8 +822,8 @@ class AppMetricaClient:
             if response.status_code == 401:
                 raise AppMetricaError("Недействительный токен для API AppMetrica.")
             if response.status_code == 202:
-                time.sleep(poll_interval)
-                waited += poll_interval
+                time.sleep(_LOGS_POLL_INTERVAL)
+                waited += _LOGS_POLL_INTERVAL
                 continue
             if response.status_code >= 400:
                 detail = ""
@@ -971,12 +910,14 @@ class AppMetricaClient:
             raise
 
     def _list_applications(self) -> list[dict]:
+        if self._applications_cache is not None:
+            return self._applications_cache
         try:
             response = requests.get(
                 APPLICATIONS_URL,
                 params={"limit": 1000},
                 headers=self._headers(),
-                timeout=60,
+                timeout=30,
             )
         except RequestException as exc:
             raise AppMetricaError("Не удалось подключиться к Management API AppMetrica") from exc
@@ -985,10 +926,12 @@ class AppMetricaClient:
             raise AppMetricaError("Недействительный токен для API AppMetrica.")
         if response.status_code >= 400:
             logger.warning("AppMetrica applications list failed: HTTP %s", response.status_code)
-            return []
+            self._applications_cache = []
+            return self._applications_cache
 
         payload = response.json()
-        return _extract_applications(payload)
+        self._applications_cache = _extract_applications(payload)
+        return self._applications_cache
 
     def _list_trackers(self, application_id: int) -> list[dict]:
         trackers: list[dict] = []

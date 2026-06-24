@@ -101,20 +101,33 @@ def fetch_client_reports(
     clients = query.all()
 
     weeks = iter_week_ranges(date_from, date_to)
+    token = resolve_appmetrica_token(db, settings)
+    app_hints = _all_appmetrica_application_ids(db)
+    appmetrica_api = (
+        AppMetricaClient(token, application_id_hints=app_hints) if token else None
+    )
 
     def _load_client(client: Client) -> ClientMonthlyReport:
-        return _client_report_for_client(db, client, weeks, settings, date_from, date_to)
+        return _client_report_for_client(
+            client,
+            weeks,
+            settings,
+            date_from,
+            date_to,
+            appmetrica_api=appmetrica_api,
+        )
 
     return map_parallel(_load_client, clients)
 
 
 def _client_report_for_client(
-    db: Session,
     client: Client,
     weeks: list[tuple[date, date]],
     settings: Settings,
     date_from: date,
     date_to: date,
+    *,
+    appmetrica_api: AppMetricaClient | None = None,
 ) -> ClientMonthlyReport:
     report = ClientMonthlyReport(
         client_id=client.id,
@@ -132,7 +145,9 @@ def _client_report_for_client(
     try:
         rows = fetch_client_report_rows_cached(settings, client, date_from, date_to)
         _aggregate_rows_into_report(report, rows, goal_ids, client.attribution_model)
-        _apply_appmetrica_metrics(db, report, client, settings, date_from, date_to)
+        _apply_appmetrica_metrics(
+            report, client, settings, date_from, date_to, appmetrica_api=appmetrica_api
+        )
     except Exception as exc:
         report.error = str(exc)[:300]
     return report
@@ -198,12 +213,13 @@ def _aggregate_rows_into_report(
 
 
 def _apply_appmetrica_metrics(
-    db: Session,
     report: ClientMonthlyReport,
     client: Client,
     settings: Settings,
     date_from: date,
     date_to: date,
+    *,
+    appmetrica_api: AppMetricaClient | None = None,
 ) -> None:
     app_id = client.appmetrica_application_id
     install_key = selected_appmetrica_install_key(client)
@@ -211,24 +227,21 @@ def _apply_appmetrica_metrics(
     if not app_id or (not install_key and not purchase_key):
         return
 
-    token = resolve_appmetrica_token(db, settings)
-    if not token:
+    if appmetrica_api is None:
         report.error = _append_report_note(report.error, "Не задан токен AppMetrica (Настройки сервиса).")
         return
 
     try:
-        hints = _other_appmetrica_application_ids(db, client.id)
-        api = AppMetricaClient(token, application_id_hints=hints)
         install_by_day: dict[date, float] = {}
         purchase_by_day: dict[date, float] = {}
         tracking = (client.appmetrica_tracking_id or "").strip() or None
         if install_key:
-            install_by_day = api.fetch_daily_counts(
-                int(app_id), install_key, date_from, date_to, tracking_id=tracking
+            install_by_day = _fetch_appmetrica_daily_cached(
+                appmetrica_api, int(app_id), install_key, tracking, date_from, date_to
             )
         if purchase_key:
-            purchase_by_day = api.fetch_daily_counts(
-                int(app_id), purchase_key, date_from, date_to, tracking_id=tracking
+            purchase_by_day = _fetch_appmetrica_daily_cached(
+                appmetrica_api, int(app_id), purchase_key, tracking, date_from, date_to
             )
     except AppMetricaError as exc:
         report.error = _append_report_note(report.error, str(exc))
@@ -249,14 +262,43 @@ def _apply_appmetrica_metrics(
         report.total.add(week)
 
 
-def _other_appmetrica_application_ids(db: Session, client_id: int) -> tuple[int, ...]:
+def _all_appmetrica_application_ids(db: Session) -> tuple[int, ...]:
     rows = (
         db.query(Client.appmetrica_application_id)
-        .filter(Client.id != client_id, Client.appmetrica_application_id.isnot(None))
+        .filter(Client.appmetrica_application_id.isnot(None))
         .distinct()
         .all()
     )
     return tuple(sorted({int(row[0]) for row in rows if row[0]}))
+
+
+def _fetch_appmetrica_daily_cached(
+    api: AppMetricaClient,
+    application_id: int,
+    event_key: str,
+    tracking_id: str | None,
+    date_from: date,
+    date_to: date,
+) -> dict[date, float]:
+    key = (
+        "appmetrica_daily",
+        application_id,
+        event_key,
+        tracking_id or "",
+        date_from.isoformat(),
+        date_to.isoformat(),
+    )
+    return get_or_set(
+        key,
+        lambda: api.fetch_daily_counts(
+            application_id,
+            event_key,
+            date_from,
+            date_to,
+            tracking_id=tracking_id,
+        ),
+        ttl_seconds=CACHE_TTL_SECONDS,
+    )
 
 
 def _append_report_note(existing: str | None, note: str) -> str:
