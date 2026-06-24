@@ -26,15 +26,12 @@ _SERVE_HASH_RE = re.compile(r"/serve/(\d+)")
 
 _TRACKER_FILTER_ATTRIBUTES = (
     "ym:i:trackerName",
-    "ym:i:trackingId",
-    "ym:i:tracker",
     "ym:ts:trackerName",
-    "ym:ts:trackingId",
 )
 
 _TRACKER_DIMENSIONS_BY_PREFIX: dict[str, tuple[str, ...]] = {
-    "ym:i:": ("ym:i:trackerName", "ym:i:tracker", "ym:i:trackingId"),
-    "ym:ts:": ("ym:ts:trackerName", "ym:ts:trackingId"),
+    "ym:i:": ("ym:i:trackerName",),
+    "ym:ts:": ("ym:ts:trackerName",),
 }
 
 BUILTIN_INSTALL_KEY = "__builtin_install__"
@@ -328,9 +325,7 @@ class AppMetricaClient:
         escaped = _escape_filter_value(tracker_value)
         probe_configs = (
             ("ym:i:installDevices", "ym:i:trackerName"),
-            ("ym:i:installDevices", "ym:i:trackingId"),
             ("ym:ts:advInstallDevices", "ym:ts:trackerName"),
-            ("ym:ts:advInstallDevices", "ym:ts:trackingId"),
         )
         for metric, attribute in probe_configs:
             try:
@@ -501,7 +496,6 @@ class AppMetricaClient:
         probe_configs = (
             ("ym:i:installDevices", "ym:i:trackerName"),
             ("ym:ts:advInstallDevices", "ym:ts:trackerName"),
-            ("ym:ts:advInstallDevices", "ym:ts:trackingId"),
         )
         trackers: list[dict] = []
         seen: set[tuple[str, str]] = set()
@@ -687,6 +681,28 @@ class AppMetricaClient:
         event_key: str | None = None,
     ) -> dict[date, float]:
         last_error: AppMetricaError | None = None
+
+        if (
+            tracker.name
+            and (
+                event_key == BUILTIN_INSTALL_KEY
+                or metric.startswith("ym:i:")
+                or metric.startswith("ym:ts:")
+            )
+        ):
+            try:
+                return self._fetch_tracked_daily_counts_from_logs(
+                    application_id,
+                    tracker,
+                    date_from,
+                    date_to,
+                    event_key=event_key,
+                    metric=metric,
+                )
+            except AppMetricaError as exc:
+                last_error = exc
+                logger.warning("Logs API tracker filter failed for %s: %s", metric, exc)
+
         for tracker_filter in _tracker_filter_variants(tracker, metric):
             combined = _combine_filters(event_filter, tracker_filter)
             try:
@@ -1217,32 +1233,46 @@ def _metric_prefix(metric: str) -> str:
 def _filter_attributes_for_metric(metric: str) -> tuple[str, ...]:
     prefix = _metric_prefix(metric)
     if prefix in {"ym:r:", "ym:ce:"}:
-        return ("ym:i:trackerName", "ym:i:trackingId", "ym:i:tracker")
+        return ("ym:i:trackerName",)
     if prefix == "ym:ts:":
-        return ("ym:ts:trackerName", "ym:ts:trackingId")
-    return ("ym:i:trackerName", "ym:i:trackingId", "ym:i:tracker")
+        return ("ym:ts:trackerName",)
+    return ("ym:i:trackerName",)
+
+
+def _tracker_filter_values(tracker: ResolvedTracker) -> tuple[str, ...]:
+    values: list[str] = []
+    if tracker.name:
+        values.append(tracker.name)
+    tracking_id = (tracker.tracking_id or "").strip()
+    if tracking_id and tracking_id != tracker.name and tracking_id.isdigit():
+        values.append(tracking_id)
+    return tuple(dict.fromkeys(values))
 
 
 def _tracker_filter_variants(tracker: ResolvedTracker, metric: str = "") -> tuple[str, ...]:
     attributes = _filter_attributes_for_metric(metric) if metric else _TRACKER_FILTER_ATTRIBUTES
-    values: list[str] = []
-    if tracker.name:
-        values.append(tracker.name)
-    if tracker.tracking_id and tracker.tracking_id != tracker.name:
-        values.append(tracker.tracking_id)
-
     variants: list[str] = []
     for attribute in attributes:
-        for value in values:
+        for value in _tracker_filter_values(tracker):
             variants.append(f"{attribute}=='{_escape_filter_value(value)}'")
     return tuple(dict.fromkeys(variants))
 
 
 def _is_tracker_filter_rejected(exc: AppMetricaError) -> bool:
-    text = str(exc)
-    if "HTTP 400" not in text and "Incorrectly specified" not in text:
+    text = str(exc).lower()
+    if "4001" in text:
+        return True
+    if "http 400" not in text and "incorrectly specified" not in text and "неверно указан" not in text:
         return False
-    return "tracker" in text.lower() or "filter" in text.lower() or "attribute" in text.lower()
+    markers = (
+        "tracker",
+        "tracking",
+        "filter",
+        "attribute",
+        "атрибут",
+        "трекер",
+    )
+    return any(marker in text for marker in markers)
 
 
 def _tracker_filter_error(
@@ -1251,11 +1281,11 @@ def _tracker_filter_error(
 ) -> AppMetricaError:
     label = tracker.name if tracker.name != tracker.tracking_id else tracker.tracking_id
     message = (
-        f"Не удалось отфильтровать данные по трекеру «{label}» (ID {tracker.tracking_id}). "
+        f"Не удалось отфильтровать данные по трекеру «{label}». "
         "Проверьте, что трекер относится к этому приложению AppMetrica."
     )
-    if last_error:
-        return AppMetricaError(f"{message} {last_error}")
+    if last_error and "Не удалось отфильтровать" not in str(last_error):
+        logger.warning("Tracker filter failed for %s: %s", label, last_error)
     return AppMetricaError(message)
 
 
