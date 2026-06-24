@@ -302,6 +302,7 @@ def _fetch_appmetrica_daily_cached(
 ) -> dict[date, float]:
     key = (
         "appmetrica_daily",
+        "v2",
         application_id,
         event_key,
         tracking_id or "",

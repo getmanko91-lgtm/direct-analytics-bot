@@ -604,11 +604,8 @@ class AppMetricaClient:
             )
         if event_key == BUILTIN_INSTALL_KEY:
             metrics = (
-                "ym:i:installDevices",
                 "ym:ts:advInstallDevices",
-            ) if tracker_ref else (
                 "ym:i:installDevices",
-                "ym:ts:advInstallDevices",
             )
             return self._fetch_with_metric_fallbacks(
                 application_id,
@@ -665,7 +662,16 @@ class AppMetricaClient:
         event_filter: str | None = None,
         event_key: str | None = None,
     ) -> dict[date, float]:
+        if resolved_tracker and event_key == BUILTIN_INSTALL_KEY:
+            return self._fetch_tracked_install_counts(
+                application_id,
+                resolved_tracker,
+                date_from,
+                date_to,
+            )
+
         last_error: AppMetricaError | None = None
+        last_result: dict[date, float] = {}
         for metric in metrics:
             try:
                 if resolved_tracker:
@@ -679,15 +685,98 @@ class AppMetricaClient:
                         event_key=event_key,
                     )
                 combined = _combine_filters(event_filter, extra_filters)
-                return self._fetch_daily_counts_metric(
+                result = self._fetch_daily_counts_metric(
                     application_id, metric, combined, date_from, date_to
                 )
+                if event_key == BUILTIN_INSTALL_KEY:
+                    if sum(result.values()) > 0:
+                        return result
+                    last_result = result
+                    continue
+                return result
             except AppMetricaError as exc:
                 last_error = exc
                 logger.warning("AppMetrica metric %s failed: %s", metric, exc)
+        if event_key == BUILTIN_INSTALL_KEY and last_result:
+            return last_result
         if last_error:
             raise last_error
         return {}
+
+    def _fetch_tracked_install_counts(
+        self,
+        application_id: int,
+        tracker: ResolvedTracker,
+        date_from: date,
+        date_to: date,
+    ) -> dict[date, float]:
+        candidates: list[tuple[str, dict[date, float]]] = []
+
+        for probe_metric, tracker_dim in (
+            ("ym:ts:advInstallDevices", "ym:ts:trackerName"),
+            ("ym:i:installDevices", "ym:i:trackerName"),
+        ):
+            try:
+                data = self._fetch_daily_counts_grouped_by_tracker(
+                    application_id,
+                    probe_metric,
+                    tracker_dim,
+                    tracker,
+                    date_from,
+                    date_to,
+                )
+                if data:
+                    candidates.append((probe_metric, data))
+            except AppMetricaError as exc:
+                if not _is_invalid_tracker_attribute_error(exc):
+                    logger.warning(
+                        "AppMetrica install stat %s failed: %s", probe_metric, exc
+                    )
+
+        try:
+            logs = self._fetch_tracked_daily_counts_from_logs(
+                application_id,
+                tracker,
+                date_from,
+                date_to,
+            )
+            if logs:
+                candidates.append(("logs", logs))
+        except AppMetricaError as exc:
+            logger.warning("AppMetrica install logs failed: %s", exc)
+
+        if candidates:
+            for probe_metric, data in candidates:
+                if probe_metric == "ym:ts:advInstallDevices" and sum(data.values()) > 0:
+                    return data
+            best_tag, best_data = max(
+                candidates, key=lambda item: sum(item[1].values())
+            )
+            if sum(best_data.values()) > 0:
+                return best_data
+
+        last_error: AppMetricaError | None = None
+        for metric in ("ym:ts:advInstallDevices", "ym:i:installDevices"):
+            for tracker_filter in _tracker_filter_variants(tracker, metric):
+                try:
+                    return self._fetch_daily_counts_metric(
+                        application_id,
+                        metric,
+                        tracker_filter,
+                        date_from,
+                        date_to,
+                    )
+                except AppMetricaError as exc:
+                    if _is_invalid_tracker_attribute_error(exc):
+                        continue
+                    if not _is_tracker_filter_rejected(exc):
+                        raise
+                    last_error = exc
+
+        available = self._list_tracker_names_from_logs(
+            application_id, date_from, date_to
+        )
+        raise _tracker_filter_error(tracker, last_error, available_names=available)
 
     def _fetch_tracked_daily_counts(
         self,
@@ -871,7 +960,8 @@ class AppMetricaClient:
                 "Logs API не поддерживает фильтрацию покупок по трекеру."
             )
 
-        result: dict[date, float] = {}
+        seen_by_day: dict[date, set[str]] = {}
+        anonymous_by_day: dict[date, float] = {}
         chunk_start = date_from
         while chunk_start <= date_to:
             chunk_end = min(chunk_start + timedelta(days=_LOGS_CHUNK_DAYS - 1), date_to)
@@ -885,8 +975,15 @@ class AppMetricaClient:
                 day = _parse_date_value(str(row.get("install_datetime", "")))
                 if day is None:
                     continue
-                result[day] = result.get(day, 0.0) + 1.0
+                installation_id = str(row.get("installation_id", "")).strip()
+                if installation_id:
+                    seen_by_day.setdefault(day, set()).add(installation_id)
+                else:
+                    anonymous_by_day[day] = anonymous_by_day.get(day, 0.0) + 1.0
             chunk_start = chunk_end + timedelta(days=1)
+        result = {day: float(len(ids)) for day, ids in seen_by_day.items()}
+        for day, count in anonymous_by_day.items():
+            result[day] = result.get(day, 0.0) + count
         return result
 
     def _fetch_tracked_purchases_from_logs(
@@ -1467,17 +1564,18 @@ def _tracker_dimension_values(dimension: dict | str) -> set[str]:
 
 def _logs_row_matches_tracker(row: dict, tracker: ResolvedTracker) -> bool:
     tracker_name = str(row.get("tracker_name", "")).strip()
-    tracking_id = str(row.get("tracking_id", "")).strip()
+    row_tracking_id = str(row.get("tracking_id", "")).strip()
     candidates = [tracker.tracking_id, tracker.name]
     for candidate in candidates:
         candidate = candidate.strip()
         if not candidate:
             continue
-        if candidate in {tracker_name, tracking_id}:
+        serve_hash = _extract_serve_hash(candidate)
+        if serve_hash and row_tracking_id == serve_hash:
+            return True
+        if candidate in {tracker_name, row_tracking_id}:
             return True
         if tracker_name and _tracker_names_match(candidate, tracker_name):
-            return True
-        if tracking_id and candidate == tracking_id:
             return True
     return False
 
