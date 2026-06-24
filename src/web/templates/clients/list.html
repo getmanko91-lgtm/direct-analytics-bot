@@ -21,7 +21,7 @@
       <th>Метрика</th>
       <th>Цели выбраны</th>
       <th>Атрибуция</th>
-      <th></th>
+      <th class="actions-col">Действия</th>
     </tr>
   </thead>
   <tbody>
@@ -34,13 +34,15 @@
       <td>{{ client.metrika_counter_id or '—' }}</td>
       <td>{{ client.goals|selectattr('is_selected')|list|length }}</td>
       <td>{{ client.attribution_model }}</td>
-      <td class="actions">
+      <td class="actions-col">
+        <div class="actions">
         <a href="/clients/{{ client.id }}/goals">Цели</a>
         <a href="/clients/{{ client.id }}/appmetrica-goals">AppMetrica</a>
         <a href="/clients/{{ client.id }}/edit">Изменить</a>
         <form action="/clients/{{ client.id }}/delete" method="post" class="inline" onsubmit="return confirm('Удалить клиента «{{ client.name }}»?');">
           <button type="submit" class="link-btn link-btn-danger">Удалить</button>
         </form>
+        </div>
       </td>
     </tr>
     {% endfor %}

@@ -222,6 +222,24 @@ h2 { margin: 2rem 0 1rem; font-size: 1.25rem; }
   padding: 0.85rem 1rem;
   text-align: left;
   border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.table th.actions-col,
+.table td.actions-col {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.actions .inline {
+  display: inline-flex;
 }
 
 .table th {
@@ -232,12 +250,6 @@ h2 { margin: 2rem 0 1rem; font-size: 1.25rem; }
 }
 
 .table tr:last-child td { border-bottom: none; }
-
-.actions {
-  display: flex;
-  gap: 0.75rem;
-  white-space: nowrap;
-}
 
 .badge {
   display: inline-block;
