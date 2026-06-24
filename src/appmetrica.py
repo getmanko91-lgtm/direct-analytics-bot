@@ -178,6 +178,17 @@ class AppMetricaClient:
         if resolved:
             return resolved
 
+        if not serve_hash and not (ref.isdigit() and len(ref) <= 12):
+            resolved_logs = self._try_resolve_by_name_logs(
+                application_id,
+                ref,
+                date_from=date_from,
+                date_to=date_to,
+            )
+            if resolved_logs:
+                return resolved_logs
+            return application_id, ResolvedTracker(ref, ref)
+
         end = date_to or date.today()
         start = date_from or (end - timedelta(days=90))
         for app_id in self._candidate_application_ids(application_id):
@@ -188,6 +199,44 @@ class AppMetricaClient:
             f"Трекер «{ref}» не найден. "
             f"Проверьте ID приложения AppMetrica (сейчас {application_id}) и название трекера."
         )
+
+    def _try_resolve_by_name_logs(
+        self,
+        application_id: int,
+        tracker_name: str,
+        *,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> tuple[int, ResolvedTracker] | None:
+        ref = tracker_name.strip()
+        if not ref or _extract_serve_hash(ref):
+            return None
+
+        end = date_to or date.today()
+        start = date_from or (end - timedelta(days=30))
+        params = {
+            "application_id": application_id,
+            "date_since": f"{start.isoformat()} 00:00:00",
+            "date_until": f"{end.isoformat()} 23:59:59",
+            "fields": "tracker_name,tracking_id",
+            "tracker_name": ref,
+            "skip_unavailable_shards": "true",
+        }
+        try:
+            payload = self._fetch_logs_export("installations", params)
+        except AppMetricaError:
+            return None
+
+        for row in payload.get("data") or []:
+            name = str(row.get("tracker_name", "")).strip()
+            tracking_id = str(row.get("tracking_id", "")).strip()
+            if not name and not tracking_id:
+                continue
+            if _tracker_names_match(ref, name) or ref in {name, tracking_id}:
+                key = tracking_id or name
+                label = name or tracking_id
+                return application_id, ResolvedTracker(key, label)
+        return None
 
     def resolve_tracker(
         self,
@@ -514,7 +563,10 @@ class AppMetricaClient:
             return True
         except AppMetricaError as exc:
             text = str(exc).lower()
-            if "http 404" in text or "не найдено" in text or "not found" in text:
+            if any(
+                marker in text
+                for marker in ("http 404", "http 403", "не найдено", "not found", "нет доступа")
+            ):
                 return False
             raise
 
@@ -866,10 +918,12 @@ class AppMetricaClient:
         return result
 
     def _get_stat_data(self, params: dict) -> dict:
+        request_params = dict(params)
+        request_params.setdefault("lang", "ru")
         try:
             response = requests.get(
                 STAT_DATA_URL,
-                params=params,
+                params=request_params,
                 headers=self._headers(),
                 timeout=120,
             )
