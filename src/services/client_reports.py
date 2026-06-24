@@ -236,13 +236,23 @@ def _apply_appmetrica_metrics(
         purchase_by_day: dict[date, float] = {}
         tracking = (client.appmetrica_tracking_id or "").strip() or None
         if install_key:
-            install_by_day = _fetch_appmetrica_daily_cached(
-                appmetrica_api, int(app_id), install_key, tracking, date_from, date_to
-            )
+            try:
+                install_by_day = _fetch_appmetrica_daily_cached(
+                    appmetrica_api, int(app_id), install_key, tracking, date_from, date_to
+                )
+            except AppMetricaError as exc:
+                report.error = _append_report_note(
+                    report.error, f"Установки AppMetrica: {exc}"
+                )
         if purchase_key:
-            purchase_by_day = _fetch_appmetrica_daily_cached(
-                appmetrica_api, int(app_id), purchase_key, tracking, date_from, date_to
-            )
+            try:
+                purchase_by_day = _fetch_appmetrica_daily_cached(
+                    appmetrica_api, int(app_id), purchase_key, tracking, date_from, date_to
+                )
+            except AppMetricaError as exc:
+                report.error = _append_report_note(
+                    report.error, f"Покупки AppMetrica: {exc}"
+                )
     except AppMetricaError as exc:
         report.error = _append_report_note(report.error, str(exc))
         return
