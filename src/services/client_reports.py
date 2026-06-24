@@ -205,7 +205,6 @@ def _aggregate_rows_into_report(
             metrics.image_conversions += conversions
         elif category == "app":
             metrics.app_spend_raw += cost_raw
-            metrics.app_installs += conversions
 
     report.total = WeekMetrics()
     for week in report.week_metrics:
@@ -344,7 +343,7 @@ def format_number(value: float) -> str:
 
 def format_ratio(numerator: float, denominator: float) -> str:
     if denominator <= 0:
-        return "#DIV/0!"
+        return "—"
     return format_money(numerator / denominator)
 
 

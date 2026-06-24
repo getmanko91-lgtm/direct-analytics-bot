@@ -34,39 +34,43 @@
 {% endif %}
 
 {% if client.appmetrica_goals %}
-<form method="post" class="card">
+<form method="post" class="form card">
   <p class="muted">
     Расход по приложениям — из Директа (кампании «ПРИЛ» / «ПРИЛОЖ»).
     <strong>Установки</strong> и <strong>покупки</strong> — из AppMetrica по выбранным событиям.
   </p>
   {% set install_key = client.appmetrica_goals|selectattr('role', 'equalto', 'install')|map(attribute='event_key')|first %}
   {% set purchase_key = client.appmetrica_goals|selectattr('role', 'equalto', 'purchase')|map(attribute='event_key')|first %}
-  <label>Цель «установка приложения»
-    <select name="install_goal">
-      <option value="">— не выбрано —</option>
-      {% for goal in client.appmetrica_goals|sort(attribute='event_label') %}
-      <option value="{{ goal.event_key }}" {% if goal.event_key == install_key %}selected{% endif %}>
-        {{ goal.event_label }}
-      </option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>Цель «покупка»
-    <select name="purchase_goal">
-      <option value="">— не выбрано —</option>
-      {% for goal in client.appmetrica_goals|sort(attribute='event_label') %}
-      <option value="{{ goal.event_key }}" {% if goal.event_key == purchase_key %}selected{% endif %}>
-        {{ goal.event_label }}
-      </option>
-      {% endfor %}
-    </select>
-  </label>
+  <div class="form-grid-2">
+    <label>Цель «установка приложения»
+      <select name="install_goal">
+        <option value="">— не выбрано —</option>
+        {% for goal in client.appmetrica_goals|sort(attribute='event_label') %}
+        <option value="{{ goal.event_key }}" {% if goal.event_key == install_key %}selected{% endif %}>
+          {{ goal.event_label }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Цель «покупка»
+      <select name="purchase_goal">
+        <option value="">— не выбрано —</option>
+        {% for goal in client.appmetrica_goals|sort(attribute='event_label') %}
+        <option value="{{ goal.event_key }}" {% if goal.event_key == purchase_key %}selected{% endif %}>
+          {{ goal.event_label }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
   <p class="muted form-hint">
     В списке есть встроенные метрики AppMetrica и пользовательские события приложения.
     Токен: <a href="/settings">Настройки</a> → AppMetrica (scope <code>appmetrica:read</code>).
   </p>
-  <button type="submit" class="btn btn-primary">Сохранить выбор</button>
-  <a href="/clients/{{ client.id }}/goals" class="btn btn-secondary">Цели Метрики/Директа</a>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Сохранить выбор</button>
+    <a href="/clients/{{ client.id }}/goals" class="btn btn-secondary">Цели Метрики/Директа</a>
+  </div>
 </form>
 {% else %}
 <div class="card">

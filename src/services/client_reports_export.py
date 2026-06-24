@@ -122,7 +122,7 @@ def _write_client_section(ws, start_row: int, report: ClientMonthlyReport, vat_r
     _write_metrics_row(ws, row, total_label, report.total, vat_rate)
     row += 1
 
-    ws.cell(row=row, column=12, value="ПЛАН").font = Font(bold=True)
+    ws.cell(row=row, column=1, value="ПЛАН").font = Font(bold=True)
     if report.plan_budget > 0:
         ws.cell(row=row, column=14, value=format_money(report.plan_budget))
     row += 2

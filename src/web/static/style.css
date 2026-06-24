@@ -138,8 +138,21 @@ h2 { margin: 2rem 0 1rem; font-size: 1.25rem; }
 
 .form-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 1rem;
+}
+
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 1.5rem;
+}
+
+@media (max-width: 720px) {
+  .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
 }
 
 .btn {
@@ -746,7 +759,12 @@ code {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.85rem;
+  table-layout: fixed;
+  min-width: 1100px;
 }
+
+.client-report-table .cr-col-date { width: 9rem; }
+.client-report-table .cr-col-total { width: 7rem; }
 
 .client-report-table th,
 .client-report-table td {
@@ -788,10 +806,11 @@ code {
 
 .client-report-table .cr-plan-label {
   font-weight: 700;
+  text-align: left;
 }
 
-.client-report-table .cr-div {
-  color: #ff7a66;
+.client-report-table .cr-plan-row td:last-child {
+  font-weight: 700;
 }
 
 @media (max-width: 640px) {

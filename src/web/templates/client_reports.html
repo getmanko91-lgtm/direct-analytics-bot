@@ -44,6 +44,13 @@
   {% else %}
   <div class="table-wrap">
     <table class="client-report-table">
+      <colgroup>
+        <col class="cr-col-date">
+        <col span="3" class="cr-col-conv">
+        <col span="4" class="cr-col-image">
+        <col span="5" class="cr-col-app">
+        <col class="cr-col-total">
+      </colgroup>
       <thead>
         <tr>
           <th rowspan="2" class="cr-date">Дата</th>
@@ -73,16 +80,16 @@
           <td>{{ row.period }}</td>
           <td>{{ row.conv_spend }}</td>
           <td>{{ row.conv_count }}</td>
-          <td class="{% if row.conv_price == '#DIV/0!' %}cr-div{% endif %}">{{ row.conv_price }}</td>
+          <td>{{ row.conv_price }}</td>
           <td>{{ row.image_spend }}</td>
           <td>{{ row.image_impressions }}</td>
-          <td class="{% if row.image_cpm == '#DIV/0!' %}cr-div{% endif %}">{{ row.image_cpm }}</td>
+          <td>{{ row.image_cpm }}</td>
           <td>{{ row.image_conversions }}</td>
           <td>{{ row.app_spend }}</td>
           <td>{{ row.app_installs }}</td>
-          <td class="{% if row.app_cpi == '#DIV/0!' %}cr-div{% endif %}">{{ row.app_cpi }}</td>
+          <td>{{ row.app_cpi }}</td>
           <td>{{ row.app_purchases }}</td>
-          <td class="{% if row.app_cpp == '#DIV/0!' %}cr-div{% endif %}">{{ row.app_cpp }}</td>
+          <td>{{ row.app_cpp }}</td>
           <td>{{ row.total_spend }}</td>
         </tr>
         {% endfor %}
@@ -90,22 +97,21 @@
           <td>{{ report.total_label }}</td>
           <td>{{ report.total.conv_spend }}</td>
           <td>{{ report.total.conv_count }}</td>
-          <td class="{% if report.total.conv_price == '#DIV/0!' %}cr-div{% endif %}">{{ report.total.conv_price }}</td>
+          <td>{{ report.total.conv_price }}</td>
           <td>{{ report.total.image_spend }}</td>
           <td>{{ report.total.image_impressions }}</td>
-          <td class="{% if report.total.image_cpm == '#DIV/0!' %}cr-div{% endif %}">{{ report.total.image_cpm }}</td>
+          <td>{{ report.total.image_cpm }}</td>
           <td>{{ report.total.image_conversions }}</td>
           <td>{{ report.total.app_spend }}</td>
           <td>{{ report.total.app_installs }}</td>
-          <td class="{% if report.total.app_cpi == '#DIV/0!' %}cr-div{% endif %}">{{ report.total.app_cpi }}</td>
+          <td>{{ report.total.app_cpi }}</td>
           <td>{{ report.total.app_purchases }}</td>
-          <td class="{% if report.total.app_cpp == '#DIV/0!' %}cr-div{% endif %}">{{ report.total.app_cpp }}</td>
+          <td>{{ report.total.app_cpp }}</td>
           <td>{{ report.total.total_spend }}</td>
         </tr>
         <tr class="cr-plan-row">
-          <td colspan="11"></td>
           <td class="cr-plan-label">ПЛАН</td>
-          <td></td>
+          <td colspan="12"></td>
           <td>{{ report.plan_budget }}</td>
         </tr>
       </tbody>
