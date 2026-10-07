@@ -56,3 +56,5 @@ def _migrate_sqlite() -> None:
             conn.execute(text("ALTER TABLE clients ADD COLUMN appmetrica_application_id INTEGER"))
         if "appmetrica_tracking_id" not in columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN appmetrica_tracking_id VARCHAR(64) NOT NULL DEFAULT ''"))
+        if "manual_kpi" not in columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN manual_kpi FLOAT"))

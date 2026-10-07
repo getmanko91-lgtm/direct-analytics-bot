@@ -28,7 +28,7 @@
     <a href="/kpi?{{ preset_7days }}" class="btn btn-secondary btn-sm">7 дней</a>
     <a href="/kpi?{{ preset_month }}" class="btn btn-secondary btn-sm">Текущий месяц</a>
   </div>
-  <p class="muted">Считаются кампании «КОНВЕР», «МК», «ЕПК», «ТМК». CPA = расход / конверсии (с НДС).</p>
+  <p class="muted">Считаются кампании «КОНВЕР», «МК», «ЕПК», «ТМК». CPA = расход / конверсии (с НДС). KPI проекта вводится вручную и сохраняется кнопкой ниже.</p>
 </div>
 
 <div class="summary-grid kpi-summary-grid">
@@ -46,34 +46,58 @@
   </div>
 </div>
 
-<div class="table-wrap">
-  <table class="table analytics-table">
-    <thead>
-      <tr>
-        <th>Клиент</th>
-        <th>Директолог</th>
-        <th>Расход, ₽</th>
-        <th>Количество конверсий</th>
-        <th>Стоимость конверсии, ₽</th>
-        <th>Примечание</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
-      <tr class="{% if row.error %}row-error{% endif %}">
-        <td>{{ row.client_name }}</td>
-        <td>{{ row.directologist }}</td>
-        <td>{{ row.spend }}</td>
-        <td>{{ row.conversions }}</td>
-        <td>{{ row.cpa }}</td>
-        <td>{{ row.error or '—' }}</td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="6" class="muted">Нет данных</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<form method="post" action="/kpi/manual-kpi">
+  <input type="hidden" name="date_from" value="{{ date_from.isoformat() }}">
+  <input type="hidden" name="date_to" value="{{ date_to.isoformat() }}">
+  <div class="page-header kpi-save-bar">
+    <p class="muted">Впишите KPI по проектам и нажмите «Сохранить KPI».</p>
+    <button type="submit" class="btn btn-primary">Сохранить KPI</button>
+  </div>
+  <div class="table-wrap">
+    <table class="table analytics-table">
+      <thead>
+        <tr>
+          <th>Клиент</th>
+          <th>Директолог</th>
+          <th>Расход, ₽</th>
+          <th>Количество конверсий</th>
+          <th>Стоимость конверсии, ₽</th>
+          <th>KPI проекта, ₽</th>
+          <th>Денег на балансе нет</th>
+          <th>Примечание</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="{% if row.error %}row-error{% endif %}{% if row.no_balance %} row-no-balance{% endif %}">
+          <td>{{ row.client_name }}</td>
+          <td>{{ row.directologist }}</td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.conversions }}</td>
+          <td>{{ row.cpa }}</td>
+          <td>
+            <input
+              class="kpi-input"
+              type="number"
+              step="0.01"
+              min="0"
+              name="manual_kpi_{{ row.client_id }}"
+              value="{{ '%.2f'|format(row.manual_kpi) if row.manual_kpi is not none else '' }}"
+              placeholder="—"
+            >
+          </td>
+          <td class="{% if row.no_balance %}kpi-no-balance{% endif %}">
+            {% if row.no_balance %}ДЕНЕГ НА БАЛАНСЕ НЕТ{% else %}—{% endif %}
+          </td>
+          <td>{{ row.error or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="muted">Нет данных</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</form>
 {% endblock %}

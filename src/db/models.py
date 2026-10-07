@@ -39,6 +39,7 @@ class Client(Base):
     max_chat_id: Mapped[str] = mapped_column(String(64), default="")
     spend_alert_threshold: Mapped[float] = mapped_column(Float, default=0.0)
     monthly_budget: Mapped[float] = mapped_column(Float, default=0.0)
+    manual_kpi: Mapped[float | None] = mapped_column(Float, nullable=True)
     directologist: Mapped[str] = mapped_column(String(32), default="Ксюша")
     attribution_model: Mapped[str] = mapped_column(String(16), default="AUTO")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

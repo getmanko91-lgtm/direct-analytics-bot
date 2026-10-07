@@ -80,6 +80,18 @@ def _placement_filters_from_request(request: Request) -> tuple[int, float]:
     return max(min_clicks, 0), max(min_spend, 0.0)
 
 
+def _parse_optional_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    cleaned = value.strip().replace(" ", "").replace(",", ".")
+    if not cleaned:
+        return None
+    try:
+        return max(float(cleaned), 0.0)
+    except ValueError:
+        return None
+
+
 def _fmt_money(value: float) -> str:
     return f"{value:,.2f}".replace(",", " ").replace(".", ",")
 
@@ -244,28 +256,40 @@ def kpi_page(
     yesterday = today - timedelta(days=1)
 
     rows = fetch_kpi_table_cached(db, settings, date_from, date_to)
+    clients = db.query(Client).filter(Client.is_active.is_(True)).all()
+    clients_by_id = {client.id: client for client in clients}
+    balances = fetch_client_balances(
+        settings.yandex_token,
+        [client.yandex_login for client in clients],
+    )
     total_spend = sum(r.spend for r in rows if not r.error)
     total_conversions = sum(r.conversions for r in rows if not r.error)
     total_cpa = (total_spend / total_conversions) if total_conversions > 0 else None
 
-    display_rows = [
-        {
-            "client_id": r.client_id,
-            "client_name": r.client_name,
-            "directologist": r.directologist,
-            "spend": _fmt_money(r.spend) if not r.error else "—",
-            "conversions": (
-                str(int(r.conversions))
-                if r.conversions == int(r.conversions)
-                else f"{r.conversions:.2f}".replace(".", ",")
-            )
-            if not r.error
-            else "—",
-            "cpa": _fmt_money(r.cpa) if r.cpa is not None else ("—" if not r.error else "—"),
-            "error": r.error,
-        }
-        for r in rows
-    ]
+    display_rows = []
+    for r in rows:
+        client = clients_by_id.get(r.client_id)
+        balance = balances.get(client.yandex_login) if client else None
+        no_balance = bool(balance and balance.amount is not None and balance.amount <= 0)
+        display_rows.append(
+            {
+                "client_id": r.client_id,
+                "client_name": r.client_name,
+                "directologist": r.directologist,
+                "spend": _fmt_money(r.spend) if not r.error else "—",
+                "conversions": (
+                    str(int(r.conversions))
+                    if r.conversions == int(r.conversions)
+                    else f"{r.conversions:.2f}".replace(".", ",")
+                )
+                if not r.error
+                else "—",
+                "cpa": _fmt_money(r.cpa) if r.cpa is not None else ("—" if not r.error else "—"),
+                "manual_kpi": client.manual_kpi if client else None,
+                "no_balance": no_balance,
+                "error": r.error,
+            }
+        )
     return templates.TemplateResponse(
         request,
         "kpi.html",
@@ -291,6 +315,30 @@ def kpi_page(
             "preset_month": f"date_from={today.replace(day=1).isoformat()}&date_to={yesterday.isoformat()}",
         },
     )
+
+
+@router.post("/kpi/manual-kpi")
+async def kpi_save_manual(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    form = await request.form()
+    clients = db.query(Client).all()
+    for client in clients:
+        raw = form.get(f"manual_kpi_{client.id}")
+        if raw is None:
+            continue
+        client.manual_kpi = _parse_optional_float(str(raw))
+    db.commit()
+    query = {"message": "KPI сохранены"}
+    date_from = form.get("date_from")
+    date_to = form.get("date_to")
+    if date_from:
+        query["date_from"] = str(date_from)
+    if date_to:
+        query["date_to"] = str(date_to)
+    return RedirectResponse(redirect_url("/kpi", **query), status_code=303)
 
 
 def _client_reports_period(request: Request) -> tuple[date, date]:
@@ -629,6 +677,7 @@ def client_create(
     max_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
     monthly_budget: float = Form(0),
+    manual_kpi: str = Form(""),
     directologist: str = Form("Ксюша"),
     attribution_model: str = Form("AUTO"),
     user: User = Depends(get_current_user),
@@ -655,6 +704,7 @@ def client_create(
         max_chat_id=max_chat_id.strip(),
         spend_alert_threshold=spend_alert_threshold,
         monthly_budget=max(monthly_budget, 0),
+        manual_kpi=_parse_optional_float(manual_kpi),
         directologist=directologist if directologist in {"Ксюша", "Лариса"} else "Ксюша",
         attribution_model=attribution_model,
     )
@@ -702,6 +752,7 @@ def client_update(
     max_chat_id: str = Form(""),
     spend_alert_threshold: float = Form(0),
     monthly_budget: float = Form(0),
+    manual_kpi: str = Form(""),
     directologist: str = Form("Ксюша"),
     attribution_model: str = Form("AUTO"),
     is_active: str | None = Form(None),
@@ -731,6 +782,7 @@ def client_update(
     client.max_chat_id = max_chat_id.strip()
     client.spend_alert_threshold = spend_alert_threshold
     client.monthly_budget = max(monthly_budget, 0)
+    client.manual_kpi = _parse_optional_float(manual_kpi)
     client.directologist = directologist if directologist in {"Ксюша", "Лариса"} else "Ксюша"
     client.attribution_model = attribution_model
     client.is_active = is_active == "on"

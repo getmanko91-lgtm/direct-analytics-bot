@@ -689,6 +689,32 @@ code {
   font-size: 1.2rem;
 }
 
+.kpi-save-bar {
+  margin: 0 0 0.75rem;
+  align-items: center;
+}
+
+.kpi-input {
+  width: 7.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+}
+
+.kpi-no-balance {
+  color: #ff7a66;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.row-no-balance td {
+  background: rgba(252, 63, 29, 0.08);
+}
+
 .kpi-summary-grid .summary-value.cpa-high,
 .kpi-summary-grid .summary-value.cpa-medium,
 .kpi-summary-grid .summary-value.cpa-low {
