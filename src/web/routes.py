@@ -32,9 +32,15 @@ from src.services.appmetrica_sync import sync_client_appmetrica_goals
 from src.services.client_reports import fetch_client_reports_cached, format_period, metrics_to_display
 from src.services.goals_sync import selected_goal_ids, sync_client_goals
 from src.services.client_reports_export import build_client_reports_xlsx, export_filename as client_reports_export_filename
-from src.services.kpi_table import fetch_kpi_table_cached
+from src.services.kpi_table import collect_kpi_alerts, fetch_kpi_table_cached, format_kpi_telegram
 from src.services.app_settings import get_setting, set_setting
-from src.services.message_delivery import ReportDeliveryError, deliver_report_message, effective_report_channel
+from src.services.message_delivery import (
+    ReportDeliveryError,
+    deliver_report_message,
+    deliver_telegram_message,
+    effective_report_channel,
+    send_telegram_test,
+)
 from src.services.report_runner import run_all_reports, run_client_report
 from src.max_notifier import MaxError
 from src.telegram_notifier import TelegramError
@@ -315,6 +321,45 @@ def kpi_page(
             "preset_month": f"date_from={today.replace(day=1).isoformat()}&date_to={yesterday.isoformat()}",
         },
     )
+
+
+@router.post("/kpi/send")
+def kpi_send_alerts(
+    request: Request,
+    date_from: str = Form(""),
+    date_to: str = Form(""),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    period_from, period_to = _period_from_request(request)
+    view_from = _parse_date(date_from, period_from)
+    view_to = _parse_date(date_to, period_to)
+    if view_to < view_from:
+        view_from, view_to = view_to, view_from
+    try:
+        alerts = collect_kpi_alerts(db, settings, view_from, view_to)
+        message = format_kpi_telegram(alerts, view_from, view_to)
+        target = deliver_telegram_message(db, settings, message)
+        return RedirectResponse(
+            redirect_url(
+                "/kpi",
+                date_from=view_from.isoformat(),
+                date_to=view_to.isoformat(),
+                message=f"Уведомления отправлены в {target}",
+            ),
+            status_code=303,
+        )
+    except (ReportDeliveryError, TelegramError, MaxError, Exception) as exc:
+        return RedirectResponse(
+            redirect_url(
+                "/kpi",
+                date_from=view_from.isoformat(),
+                date_to=view_to.isoformat(),
+                error=str(exc)[:400],
+            ),
+            status_code=303,
+        )
 
 
 @router.post("/kpi/manual-kpi")
@@ -1051,6 +1096,9 @@ def settings_page(
         {
             "user": user,
             "telegram_chat_id": get_setting(db, "telegram_chat_id") or settings.telegram_chat_id,
+            "telegram_bot_token_configured": bool(
+                get_setting(db, "telegram_bot_token") or settings.telegram_bot_token
+            ),
             "max_chat_id": get_setting(db, "max_chat_id") or settings.max_chat_id,
             "max_bot_token_configured": bool(get_setting(db, "max_bot_token") or settings.max_bot_token),
             "appmetrica_token_configured": bool(
@@ -1060,6 +1108,7 @@ def settings_page(
             "report_time": get_setting(db, "report_time") or settings.report_time,
             "timezone": get_setting(db, "timezone") or settings.timezone,
             "message": request.query_params.get("message"),
+            "error": request.query_params.get("error"),
         },
     )
 
@@ -1068,6 +1117,7 @@ def settings_page(
 def settings_save(
     request: Request,
     telegram_chat_id: str = Form(""),
+    telegram_bot_token: str = Form(""),
     max_chat_id: str = Form(""),
     max_bot_token: str = Form(""),
     appmetrica_token: str = Form(""),
@@ -1081,6 +1131,8 @@ def settings_save(
     if channel not in {"telegram", "max", "both"}:
         channel = "telegram"
     set_setting(db, "telegram_chat_id", telegram_chat_id.strip())
+    if telegram_bot_token.strip():
+        set_setting(db, "telegram_bot_token", telegram_bot_token.strip())
     set_setting(db, "max_chat_id", max_chat_id.strip())
     if max_bot_token.strip():
         set_setting(db, "max_bot_token", max_bot_token.strip())
@@ -1093,6 +1145,25 @@ def settings_save(
 
     reschedule_daily_reports(get_settings_dep(request))
     return RedirectResponse(redirect_url("/settings", message="Настройки сохранены"), status_code=303)
+
+
+@router.post("/settings/telegram-test")
+def settings_telegram_test(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    try:
+        chat_id = send_telegram_test(db, settings)
+        return RedirectResponse(
+            redirect_url("/settings", message=f"Тестовое сообщение отправлено в Telegram (chat_id {chat_id})"),
+            status_code=303,
+        )
+    except (ReportDeliveryError, TelegramError, Exception) as exc:
+        return RedirectResponse(
+            redirect_url("/settings", error=str(exc)[:400]),
+            status_code=303,
+        )
 
 
 @router.get("/profile", response_class=HTMLResponse)

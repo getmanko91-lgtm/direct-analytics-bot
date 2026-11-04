@@ -26,6 +26,10 @@ def effective_report_channel(db: Session, settings: Settings) -> str:
     return channel
 
 
+def resolve_telegram_bot_token(db: Session, settings: Settings) -> str:
+    return (get_setting(db, "telegram_bot_token") or settings.telegram_bot_token or "").strip()
+
+
 def resolve_telegram_chat_id(
     db: Session,
     settings: Settings,
@@ -63,8 +67,9 @@ def deliver_report_message(
     sent: list[str] = []
 
     if channel in ("telegram", "both"):
-        if not settings.telegram_bot_token:
-            errors.append("Telegram: не задан TELEGRAM_BOT_TOKEN в .env")
+        telegram_token = resolve_telegram_bot_token(db, settings)
+        if not telegram_token:
+            errors.append("Telegram: не задан токен бота (Настройки или TELEGRAM_BOT_TOKEN в .env)")
         else:
             chat_id = resolve_telegram_chat_id(db, settings, client)
             if not chat_id:
@@ -72,7 +77,7 @@ def deliver_report_message(
             else:
                 try:
                     TelegramNotifier(
-                        settings.telegram_bot_token,
+                        telegram_token,
                         chat_id,
                         proxy=settings.telegram_proxy,
                     ).send_message(message)
@@ -117,12 +122,12 @@ def deliver_error_message(
     channel = effective_report_channel(db, settings)
     text = f"❌ <b>Ошибка direct-analytics-bot</b>\n\n{error}"
 
-    if channel in ("telegram", "both") and settings.telegram_bot_token:
+    if channel in ("telegram", "both") and resolve_telegram_bot_token(db, settings):
         chat_id = resolve_telegram_chat_id(db, settings, client)
         if chat_id:
             try:
                 TelegramNotifier(
-                    settings.telegram_bot_token,
+                    resolve_telegram_bot_token(db, settings),
                     chat_id,
                     proxy=settings.telegram_proxy,
                 ).send_error(error)
@@ -136,3 +141,29 @@ def deliver_error_message(
                 MaxNotifier(resolve_max_bot_token(db, settings), chat_id).send_error(error)
             except Exception:
                 logger.exception("Не удалось отправить ошибку в MAX")
+
+
+def deliver_telegram_message(
+    db: Session,
+    settings: Settings,
+    message: str,
+    *,
+    client: Client | None = None,
+) -> str:
+    token = resolve_telegram_bot_token(db, settings)
+    chat_id = resolve_telegram_chat_id(db, settings, client)
+    if not token:
+        raise ReportDeliveryError("Telegram: не задан токен бота (Настройки или TELEGRAM_BOT_TOKEN в .env)")
+    if not chat_id:
+        raise ReportDeliveryError("Telegram: не указан chat_id")
+    TelegramNotifier(token, chat_id, proxy=settings.telegram_proxy).send_message(message)
+    return "Telegram"
+
+
+def send_telegram_test(db: Session, settings: Settings) -> str:
+    deliver_telegram_message(
+        db,
+        settings,
+        "✅ <b>Тест Direct Nikitos Analytics</b>\n\nБот подключён, уведомления будут приходить в этот чат.",
+    )
+    return resolve_telegram_chat_id(db, settings)

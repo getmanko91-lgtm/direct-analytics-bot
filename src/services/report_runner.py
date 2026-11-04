@@ -16,13 +16,16 @@ from src.services.analytics_table import (
 )
 from src.services.app_settings import get_setting, set_setting
 from src.services.goals_sync import selected_goal_ids
+from src.services.kpi_table import collect_kpi_alerts, format_kpi_telegram
 from src.services.message_delivery import (
     ReportDeliveryError,
     deliver_error_message,
     deliver_report_message,
+    deliver_telegram_message,
     effective_report_channel,
     resolve_max_bot_token,
     resolve_max_chat_id,
+    resolve_telegram_bot_token,
     resolve_telegram_chat_id,
 )
 from src.yandex_direct import YandexDirectClient, YandexDirectError, yesterday_and_day_before
@@ -68,7 +71,7 @@ def run_client_report(
 
 def _summary_delivery_configured(db: Session, settings: Settings) -> bool:
     channel = effective_report_channel(db, settings)
-    if channel in ("telegram", "both") and settings.telegram_bot_token:
+    if channel in ("telegram", "both") and resolve_telegram_bot_token(db, settings):
         if resolve_telegram_chat_id(db, settings):
             return True
     if channel in ("max", "both") and resolve_max_bot_token(db, settings):
@@ -94,6 +97,16 @@ def run_daily_summary_report(db: Session, settings: Settings) -> None:
         weekly_budget_period=(week_from, week_to),
     )
     deliver_report_message(db, settings, message)
+    kpi_alerts = collect_kpi_alerts(db, settings, yesterday, yesterday)
+    if kpi_alerts.no_balance or kpi_alerts.kpi_over:
+        try:
+            deliver_telegram_message(
+                db, settings, format_kpi_telegram(kpi_alerts, yesterday, yesterday)
+            )
+        except ReportDeliveryError:
+            deliver_report_message(
+                db, settings, format_kpi_telegram(kpi_alerts, yesterday, yesterday)
+            )
     set_setting(db, "last_report_run", datetime.utcnow().isoformat())
     logger.info("Ежедневная сводка за %s отправлена", yesterday.isoformat())
 

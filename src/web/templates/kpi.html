@@ -3,6 +3,11 @@
 {% block content %}
 <div class="page-header">
   <h1>KPI</h1>
+  <form method="post" action="/kpi/send">
+    <input type="hidden" name="date_from" value="{{ date_from.isoformat() }}">
+    <input type="hidden" name="date_to" value="{{ date_to.isoformat() }}">
+    <button type="submit" class="btn btn-primary">Отправить в Telegram</button>
+  </form>
 </div>
 
 {% if message %}

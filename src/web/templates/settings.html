@@ -6,6 +6,9 @@
 {% if message %}
 <div class="alert alert-success">{{ message }}</div>
 {% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
 
 <form method="post" class="form card">
   <label>Куда отправлять отчёты
@@ -32,10 +35,13 @@
   <p class="muted form-hint">Для установок и покупок в отчёте «Отчеты клиентам». Можно также задать в <code>.env</code> как <code>YANDEX_APPMETRICA_TOKEN</code>.</p>
 
   <h2 class="settings-section-title">Telegram</h2>
+  <label>Токен бота Telegram
+    <input type="password" name="telegram_bot_token" autocomplete="off" placeholder="{% if telegram_bot_token_configured %}Токен задан — вставьте новый, чтобы заменить{% else %}Токен от @BotFather{% endif %}">
+  </label>
   <label>Общий Telegram chat_id
     <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}">
   </label>
-  <p class="muted form-hint">Токен Telegram-бота — в <code>.env</code> (<code>TELEGRAM_BOT_TOKEN</code>).</p>
+  <p class="muted form-hint">Создайте бота у <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>, вставьте токен. Напишите боту <code>/start</code>, chat_id можно взять у <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a>. Для группы добавьте бота в чат.</p>
 
   <label>Время ежедневной отправки (HH:MM)
     <input type="time" name="report_time" value="{{ report_time }}">
@@ -45,5 +51,8 @@
   </label>
   <p class="muted">OAuth-токен Директа — в <code>.env</code>. После изменения времени отправки перезапустите сервис.</p>
   <button type="submit" class="btn btn-primary">Сохранить</button>
+</form>
+<form method="post" action="/settings/telegram-test" class="form-actions">
+  <button type="submit" class="btn btn-secondary">Отправить тест в Telegram</button>
 </form>
 {% endblock %}
