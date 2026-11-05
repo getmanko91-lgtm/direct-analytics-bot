@@ -42,6 +42,13 @@
     <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}">
   </label>
   <p class="muted form-hint">Создайте бота у <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>, вставьте токен. Напишите боту <code>/start</code>, chat_id можно взять у <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a>. Для группы добавьте бота в чат.</p>
+  <label>URL релея Telegram <span class="muted">(если с VPS заблокирован api.telegram.org)</span>
+    <input type="url" name="telegram_relay_url" value="{{ telegram_relay_url }}" placeholder="https://your-worker.workers.dev">
+  </label>
+  <label>Секрет релея
+    <input type="password" name="telegram_relay_secret" autocomplete="off" placeholder="{% if telegram_relay_secret_configured %}Секрет задан — вставьте новый, чтобы заменить{% else %}тот же RELAY_SECRET, что в Worker{% endif %}">
+  </label>
+  <p class="muted form-hint">С российского VPS Telegram обычно недоступен. Релей: Cloudflare Worker (<code>deploy/telegram-relay/worker.js</code>) или GitHub Actions (<code>.github/workflows/telegram-relay.yml</code>, URL <code>https://api.github.com/repos/OWNER/REPO/dispatches</code>). Без релея уведомления уйдут в MAX, если он настроен.</p>
 
   <label>Время ежедневной отправки (HH:MM)
     <input type="time" name="report_time" value="{{ report_time }}">

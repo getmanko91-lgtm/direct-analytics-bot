@@ -1099,6 +1099,10 @@ def settings_page(
             "telegram_bot_token_configured": bool(
                 get_setting(db, "telegram_bot_token") or settings.telegram_bot_token
             ),
+            "telegram_relay_url": get_setting(db, "telegram_relay_url") or settings.telegram_relay_url or "",
+            "telegram_relay_secret_configured": bool(
+                get_setting(db, "telegram_relay_secret") or settings.telegram_relay_secret
+            ),
             "max_chat_id": get_setting(db, "max_chat_id") or settings.max_chat_id,
             "max_bot_token_configured": bool(get_setting(db, "max_bot_token") or settings.max_bot_token),
             "appmetrica_token_configured": bool(
@@ -1118,6 +1122,8 @@ def settings_save(
     request: Request,
     telegram_chat_id: str = Form(""),
     telegram_bot_token: str = Form(""),
+    telegram_relay_url: str = Form(""),
+    telegram_relay_secret: str = Form(""),
     max_chat_id: str = Form(""),
     max_bot_token: str = Form(""),
     appmetrica_token: str = Form(""),
@@ -1133,6 +1139,9 @@ def settings_save(
     set_setting(db, "telegram_chat_id", telegram_chat_id.strip())
     if telegram_bot_token.strip():
         set_setting(db, "telegram_bot_token", telegram_bot_token.strip())
+    set_setting(db, "telegram_relay_url", telegram_relay_url.strip())
+    if telegram_relay_secret.strip():
+        set_setting(db, "telegram_relay_secret", telegram_relay_secret.strip())
     set_setting(db, "max_chat_id", max_chat_id.strip())
     if max_bot_token.strip():
         set_setting(db, "max_bot_token", max_bot_token.strip())
@@ -1154,9 +1163,9 @@ def settings_telegram_test(
     settings: Settings = Depends(get_app_settings),
 ):
     try:
-        chat_id = send_telegram_test(db, settings)
+        target = send_telegram_test(db, settings)
         return RedirectResponse(
-            redirect_url("/settings", message=f"Тестовое сообщение отправлено в Telegram (chat_id {chat_id})"),
+            redirect_url("/settings", message=f"Тестовое сообщение отправлено: {target}"),
             status_code=303,
         )
     except (ReportDeliveryError, TelegramError, Exception) as exc:

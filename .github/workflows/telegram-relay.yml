@@ -1,0 +1,61 @@
+name: Telegram relay
+
+on:
+  repository_dispatch:
+    types: [telegram-send]
+  workflow_dispatch:
+    inputs:
+      chat_id:
+        description: Telegram chat_id
+        required: true
+      text:
+        description: Message text
+        required: true
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram message
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ github.event.client_payload.chat_id || inputs.chat_id }}
+          TEXT: ${{ github.event.client_payload.text || inputs.text }}
+          PARSE_MODE: ${{ github.event.client_payload.parse_mode || 'HTML' }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+
+          token = (os.environ.get("BOT_TOKEN") or "").strip()
+          chat_id = (os.environ.get("CHAT_ID") or "").strip()
+          text = os.environ.get("TEXT") or ""
+          parse_mode = (os.environ.get("PARSE_MODE") or "").strip()
+          if not token:
+              raise SystemExit("TELEGRAM_BOT_TOKEN secret is not set")
+          if not chat_id or not text:
+              raise SystemExit("chat_id and text are required")
+
+          payload = {
+              "chat_id": chat_id,
+              "text": text,
+              "disable_web_page_preview": True,
+          }
+          if parse_mode:
+              payload["parse_mode"] = parse_mode
+
+          req = urllib.request.Request(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              data=json.dumps(payload).encode(),
+              headers={"content-type": "application/json"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  body = json.loads(resp.read().decode())
+          except urllib.error.HTTPError as exc:
+              detail = exc.read().decode()[:400]
+              raise SystemExit(f"Telegram HTTP {exc.code}: {detail}") from exc
+          if not body.get("ok"):
+              raise SystemExit(f"Telegram error: {body}")
+          print("sent")
+          PY

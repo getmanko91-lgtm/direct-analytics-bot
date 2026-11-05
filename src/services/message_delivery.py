@@ -8,7 +8,7 @@ from src.config import Settings
 from src.db.models import Client
 from src.max_notifier import MaxError, MaxNotifier
 from src.services.app_settings import get_setting
-from src.telegram_notifier import TelegramError, TelegramNotifier
+from src.telegram_notifier import TelegramError, TelegramNotifier, is_telegram_network_error
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,42 @@ def resolve_max_bot_token(db: Session, settings: Settings) -> str:
     return (get_setting(db, "max_bot_token") or settings.max_bot_token or "").strip()
 
 
+def resolve_telegram_relay_url(db: Session, settings: Settings) -> str:
+    return (get_setting(db, "telegram_relay_url") or settings.telegram_relay_url or "").strip()
+
+
+def resolve_telegram_relay_secret(db: Session, settings: Settings) -> str:
+    return (get_setting(db, "telegram_relay_secret") or settings.telegram_relay_secret or "").strip()
+
+
+def _telegram_notifier(db: Session, settings: Settings, chat_id: str) -> TelegramNotifier:
+    return TelegramNotifier(
+        resolve_telegram_bot_token(db, settings),
+        chat_id,
+        proxy=settings.telegram_proxy,
+        relay_url=resolve_telegram_relay_url(db, settings),
+        relay_secret=resolve_telegram_relay_secret(db, settings),
+        api_base=settings.telegram_api_base,
+    )
+
+
+def _send_via_max(
+    db: Session,
+    settings: Settings,
+    message: str,
+    *,
+    client: Client | None = None,
+) -> str:
+    max_token = resolve_max_bot_token(db, settings)
+    chat_id = resolve_max_chat_id(db, settings, client)
+    if not max_token:
+        raise ReportDeliveryError("MAX: не задан токен бота (Настройки или MAX_BOT_TOKEN в .env)")
+    if not chat_id:
+        raise ReportDeliveryError("MAX: не указан chat_id")
+    MaxNotifier(max_token, chat_id).send_message(message)
+    return "MAX"
+
+
 def deliver_report_message(
     db: Session,
     settings: Settings,
@@ -76,11 +112,7 @@ def deliver_report_message(
                 errors.append("Telegram: не указан chat_id")
             else:
                 try:
-                    TelegramNotifier(
-                        telegram_token,
-                        chat_id,
-                        proxy=settings.telegram_proxy,
-                    ).send_message(message)
+                    _telegram_notifier(db, settings, chat_id).send_message(message)
                     sent.append("Telegram")
                 except TelegramError as exc:
                     errors.append(f"Telegram: {exc}")
@@ -126,11 +158,7 @@ def deliver_error_message(
         chat_id = resolve_telegram_chat_id(db, settings, client)
         if chat_id:
             try:
-                TelegramNotifier(
-                    resolve_telegram_bot_token(db, settings),
-                    chat_id,
-                    proxy=settings.telegram_proxy,
-                ).send_error(error)
+                _telegram_notifier(db, settings, chat_id).send_error(error)
             except Exception:
                 logger.exception("Не удалось отправить ошибку в Telegram")
 
@@ -156,14 +184,20 @@ def deliver_telegram_message(
         raise ReportDeliveryError("Telegram: не задан токен бота (Настройки или TELEGRAM_BOT_TOKEN в .env)")
     if not chat_id:
         raise ReportDeliveryError("Telegram: не указан chat_id")
-    TelegramNotifier(token, chat_id, proxy=settings.telegram_proxy).send_message(message)
-    return "Telegram"
+    try:
+        _telegram_notifier(db, settings, chat_id).send_message(message)
+        return "Telegram"
+    except TelegramError as exc:
+        if is_telegram_network_error(exc) and resolve_max_bot_token(db, settings):
+            logger.warning("Telegram недоступен с сервера, отправка в MAX: %s", exc)
+            _send_via_max(db, settings, message, client=client)
+            return "MAX (Telegram с сервера недоступен)"
+        raise ReportDeliveryError(str(exc)) from exc
 
 
 def send_telegram_test(db: Session, settings: Settings) -> str:
-    deliver_telegram_message(
+    return deliver_telegram_message(
         db,
         settings,
         "✅ <b>Тест Direct Nikitos Analytics</b>\n\nБот подключён, уведомления будут приходить в этот чат.",
     )
-    return resolve_telegram_chat_id(db, settings)

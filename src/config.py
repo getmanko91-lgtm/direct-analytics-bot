@@ -20,6 +20,9 @@ class Settings:
     telegram_bot_token: str
     telegram_chat_id: str
     telegram_proxy: str | None
+    telegram_relay_url: str | None
+    telegram_relay_secret: str | None
+    telegram_api_base: str | None
     max_bot_token: str
     max_chat_id: str
     report_channel: str
@@ -58,6 +61,9 @@ def load_settings() -> Settings:
         telegram_bot_token=telegram_token,
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
         telegram_proxy=(os.getenv("TELEGRAM_PROXY") or os.getenv("HTTPS_PROXY") or "").strip() or None,
+        telegram_relay_url=(os.getenv("TELEGRAM_RELAY_URL") or "").strip() or None,
+        telegram_relay_secret=(os.getenv("TELEGRAM_RELAY_SECRET") or "").strip() or None,
+        telegram_api_base=(os.getenv("TELEGRAM_API_BASE") or "").strip() or None,
         max_bot_token=max_token,
         max_chat_id=os.getenv("MAX_CHAT_ID", ""),
         report_channel=report_channel,

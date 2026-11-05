@@ -6,7 +6,6 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 MAX_MESSAGE_LENGTH = 4096
 
 
@@ -21,10 +20,16 @@ class TelegramNotifier:
         chat_id: str,
         *,
         proxy: str | None = None,
+        relay_url: str | None = None,
+        relay_secret: str | None = None,
+        api_base: str | None = None,
     ) -> None:
         self._bot_token = bot_token.strip()
         self._chat_id = self._normalize_chat_id(chat_id)
         self._proxy = (proxy or "").strip() or None
+        self._relay_url = (relay_url or "").strip().rstrip("/") or None
+        self._relay_secret = (relay_secret or "").strip() or None
+        self._api_base = (api_base or "https://api.telegram.org").strip().rstrip("/")
 
     @staticmethod
     def _normalize_chat_id(chat_id: str) -> str:
@@ -63,7 +68,6 @@ class TelegramNotifier:
         return kwargs
 
     def _post(self, text: str, parse_mode: str | None) -> None:
-        url = TELEGRAM_API_URL.format(token=self._bot_token)
         payload: dict = {
             "chat_id": self._chat_id,
             "text": text,
@@ -73,26 +77,74 @@ class TelegramNotifier:
             payload["parse_mode"] = parse_mode
 
         try:
-            response = requests.post(url, json=payload, **self._request_kwargs())
+            response = self._send_payload(payload)
         except requests.RequestException as exc:
-            raise TelegramError(_format_connection_error(exc, self._proxy)) from exc
+            raise TelegramError(
+                _format_connection_error(exc, self._proxy, relay=bool(self._relay_url))
+            ) from exc
 
         try:
             body = response.json()
         except ValueError:
             body = {"description": response.text}
 
+        if response.status_code in {200, 201, 204} and (
+            response.status_code == 204 or body.get("ok") is not False
+        ):
+            if response.status_code == 204 or body.get("ok", True):
+                logger.info("Сообщение отправлено в Telegram (chat_id=%s)", self._chat_id)
+                return
+
         if response.status_code != 200 or not body.get("ok"):
             description = body.get("description", response.text)
             hint = _hint_for_telegram_error(description, self._chat_id)
             raise TelegramError(f"Telegram API ({response.status_code}): {description}. {hint}")
 
-        logger.info("Сообщение отправлено в Telegram (chat_id=%s)", self._chat_id)
+    def _send_payload(self, payload: dict):
+        if self._relay_url:
+            headers = {"Content-Type": "application/json"}
+            if self._relay_secret:
+                headers["Authorization"] = f"Bearer {self._relay_secret}"
+            body: dict = payload
+            if "api.github.com" in self._relay_url and self._relay_url.rstrip("/").endswith("dispatches"):
+                headers["Accept"] = "application/vnd.github+json"
+                headers["X-GitHub-Api-Version"] = "2022-11-28"
+                body = {
+                    "event_type": "telegram-send",
+                    "client_payload": {
+                        "chat_id": str(payload.get("chat_id", "")),
+                        "text": payload.get("text") or "",
+                        "parse_mode": payload.get("parse_mode") or "",
+                    },
+                }
+            return requests.post(
+                self._relay_url,
+                json=body,
+                headers=headers,
+                timeout=30,
+            )
+        url = f"{self._api_base}/bot{self._bot_token}/sendMessage"
+        return requests.post(url, json=payload, **self._request_kwargs())
 
 
-def _format_connection_error(exc: requests.RequestException, proxy: str | None) -> str:
+def is_telegram_network_error(exc: TelegramError) -> bool:
+    return _is_network_unreachable(str(exc))
+
+
+def _format_connection_error(
+    exc: requests.RequestException,
+    proxy: str | None,
+    *,
+    relay: bool = False,
+) -> str:
     message = str(exc)
     if _is_network_unreachable(message):
+        if relay:
+            return (
+                "Не удалось связаться с Telegram-релеем. "
+                "Проверьте URL релея в Настройках. "
+                f"Ошибка: {message}"
+            )
         if proxy:
             return (
                 "Не удалось связаться с Telegram через прокси. "
@@ -100,8 +152,8 @@ def _format_connection_error(exc: requests.RequestException, proxy: str | None) 
             )
         return (
             "Не удалось связаться с Telegram: сервер не может подключиться к api.telegram.org. "
-            "На VPS в РФ Telegram часто заблокирован — добавьте в .env прокси: "
-            "TELEGRAM_PROXY=socks5://логин:пароль@хост:порт (или http://...). "
+            "На VPS в РФ Telegram часто заблокирован. Варианты: релей Cloudflare Worker "
+            "(поле «URL релея» в Настройках), SOCKS-прокси TELEGRAM_PROXY, либо отправка в MAX. "
             f"Подробнее: {message}"
         )
     return f"Не удалось связаться с Telegram: {message}"
@@ -112,9 +164,12 @@ def _is_network_unreachable(message: str) -> bool:
     return (
         "network is unreachable" in lowered
         or "failed to establish a new connection" in lowered
+        or "newconnectionerror" in lowered
+        or "max retries exceeded" in lowered
         or "name or service not known" in lowered
         or "temporary failure in name resolution" in lowered
         or "connection timed out" in lowered
+        or "не может подключиться к api.telegram.org" in lowered
     )
 
 
