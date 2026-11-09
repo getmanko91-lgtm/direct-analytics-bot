@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from src.services.runtime_cache import get_or_set
 from src.yandex_direct import YandexDirectClient, YandexDirectError
 
-BALANCE_LOW_THRESHOLD = 10_000.0
+BALANCE_LOW_THRESHOLD = 7_000.0
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,11 @@ class ClientBalance:
 
     @property
     def is_low(self) -> bool:
-        return self.amount is not None and self.amount < BALANCE_LOW_THRESHOLD
+        return self.amount is not None and 0 < self.amount <= BALANCE_LOW_THRESHOLD
+
+    @property
+    def is_empty(self) -> bool:
+        return self.amount is not None and self.amount <= 0
 
 
 def fetch_client_balances(token: str, logins: list[str]) -> dict[str, ClientBalance]:

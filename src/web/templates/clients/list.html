@@ -62,7 +62,7 @@ document.addEventListener('DOMContentLoaded', function () {
           var span = document.createElement('span');
           span.className = 'balance-indicator' + (balance.low ? ' balance-low' : '');
           if (balance.low) {
-            span.title = 'Баланс ниже 10 000 ₽';
+            span.title = 'Баланс 7 000 ₽ или меньше';
             var dot = document.createElement('span');
             dot.className = 'balance-dot';
             dot.setAttribute('aria-hidden', 'true');

@@ -15,7 +15,6 @@ from src.services.analytics_export import build_analytics_xlsx, export_filename
 from src.services.analytics_table import (
     fetch_analytics_table_cached,
     find_conversion_drought_clients,
-    find_weekly_budget_overruns,
     format_analytics_telegram,
 )
 from src.services.client_balances import fetch_client_balances, format_balance
@@ -200,7 +199,7 @@ def analytics_page(
             "error": r.error,
             "show_client_block": r.show_client_block,
             "balance_amount": format_balance(r.balance.amount) if r.balance and r.balance.amount is not None else None,
-            "balance_low": bool(r.balance and r.balance.is_low),
+            "balance_low": bool(r.balance and (r.balance.is_low or r.balance.is_empty)),
             "balance_error": r.balance.error if r.balance else None,
         }
         )
@@ -494,14 +493,11 @@ def analytics_send_report(
     try:
         rows = fetch_analytics_table_cached(db, settings, yesterday, yesterday)
         drought = find_conversion_drought_clients(db, settings, yesterday)
-        week_from, week_to, week_overruns = find_weekly_budget_overruns(db, settings, yesterday)
         message = format_analytics_telegram(
             rows,
             yesterday,
             yesterday,
             conversion_drought_clients=drought,
-            weekly_budget_alerts=week_overruns,
-            weekly_budget_period=(week_from, week_to),
         )
         target = deliver_report_message(db, settings, message)
         return RedirectResponse(
@@ -562,7 +558,7 @@ def clients_balances_json(
         balance = balances.get(client.yandex_login)
         payload[client.yandex_login] = {
             "amount": format_balance(balance.amount) if balance and balance.amount is not None else None,
-            "low": bool(balance and balance.is_low),
+            "low": bool(balance and (balance.is_low or balance.is_empty)),
             "error": balance.error if balance else None,
         }
     return JSONResponse(payload)

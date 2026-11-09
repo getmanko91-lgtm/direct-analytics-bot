@@ -11,12 +11,12 @@ from src.db.models import Client
 from src.services.analytics_table import (
     fetch_analytics_table_cached,
     find_conversion_drought_clients,
-    find_weekly_budget_overruns,
     format_analytics_telegram,
 )
 from src.services.app_settings import get_setting, set_setting
 from src.services.goals_sync import selected_goal_ids
-from src.services.kpi_table import collect_kpi_alerts, format_kpi_telegram
+from src.services.kpi_table import KpiAlerts, collect_kpi_alerts, format_kpi_telegram
+from src.services.operator_alerts import collect_operator_alert_messages
 from src.services.message_delivery import (
     ReportDeliveryError,
     deliver_error_message,
@@ -85,30 +85,37 @@ def run_daily_summary_report(db: Session, settings: Settings) -> None:
         raise ReportDeliveryError("Не настроена отправка сводки (chat_id / токен мессенджера)")
 
     yesterday = date.today() - timedelta(days=1)
+    try:
+        _deliver_operator_alerts(db, settings, date.today())
+    except Exception:
+        logger.exception("Ошибка операторских уведомлений")
     rows = fetch_analytics_table_cached(db, settings, yesterday, yesterday)
     drought = find_conversion_drought_clients(db, settings, yesterday)
-    week_from, week_to, week_overruns = find_weekly_budget_overruns(db, settings, yesterday)
     message = format_analytics_telegram(
         rows,
         yesterday,
         yesterday,
         conversion_drought_clients=drought,
-        weekly_budget_alerts=week_overruns,
-        weekly_budget_period=(week_from, week_to),
     )
     deliver_report_message(db, settings, message)
     kpi_alerts = collect_kpi_alerts(db, settings, yesterday, yesterday)
-    if kpi_alerts.no_balance or kpi_alerts.kpi_over:
-        try:
-            deliver_telegram_message(
-                db, settings, format_kpi_telegram(kpi_alerts, yesterday, yesterday)
-            )
-        except ReportDeliveryError:
-            deliver_report_message(
-                db, settings, format_kpi_telegram(kpi_alerts, yesterday, yesterday)
-            )
+    if kpi_alerts.kpi_over:
+        kpi_only = KpiAlerts(kpi_over=kpi_alerts.kpi_over)
+        _deliver_plain_alert(db, settings, format_kpi_telegram(kpi_only, yesterday, yesterday))
     set_setting(db, "last_report_run", datetime.utcnow().isoformat())
     logger.info("Ежедневная сводка за %s отправлена", yesterday.isoformat())
+
+
+def _deliver_plain_alert(db: Session, settings: Settings, message: str) -> None:
+    try:
+        deliver_telegram_message(db, settings, message)
+    except ReportDeliveryError:
+        deliver_report_message(db, settings, message)
+
+
+def _deliver_operator_alerts(db: Session, settings: Settings, today: date) -> None:
+    for message in collect_operator_alert_messages(db, settings, today):
+        _deliver_plain_alert(db, settings, message)
 
 
 def run_all_reports(db: Session, settings: Settings) -> dict[str, str | None]:
