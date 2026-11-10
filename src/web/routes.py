@@ -41,6 +41,11 @@ from src.services.message_delivery import (
     send_telegram_test,
 )
 from src.services.report_runner import run_all_reports, run_client_report
+from src.services.campaign_types import (
+    best_labels,
+    build_campaign_types_report,
+    get_campaign_types_job,
+)
 from src.services.keywords_network import (
     build_keyword_report,
     format_keywords_csv,
@@ -786,6 +791,97 @@ async def keywords_send(
         )
     except (ReportDeliveryError, TelegramError, MaxError, Exception) as exc:
         return RedirectResponse(redirect_url("/keywords", error=str(exc)[:400], **query), status_code=303)
+
+
+def _group_view(slices, total_conversions: float) -> list[dict]:
+    best_conversions, best_cpa = best_labels(slices)
+    rows = []
+    for item in slices:
+        share = item.conversions / total_conversions * 100 if total_conversions > 0 else 0
+        rows.append(
+            {
+                "label": item.label,
+                "campaigns": item.campaigns,
+                "cabinets_count": len(item.cabinets),
+                "spend": _fmt_money(item.spend),
+                "clicks": _fmt_int(item.clicks),
+                "cpc": _fmt_cost(item.cpc),
+                "conversions": _fmt_conv_count(item.conversions),
+                "share": f"{share:.0f}%",
+                "cpa": _fmt_cost(item.cpa),
+                "cpa_class": cpa_highlight_class(item.cpa) if item.cpa is not None else "cpa-high",
+                "best_conversions": item.label == best_conversions,
+                "best_cpa": item.label == best_cpa,
+                "cabinets": [
+                    {
+                        "client_name": cabinet.client_name,
+                        "directologist": cabinet.directologist,
+                        "campaigns": cabinet.campaigns,
+                        "spend": _fmt_money(cabinet.spend),
+                        "conversions": _fmt_conv_count(cabinet.conversions),
+                        "cpa": _fmt_cost(cabinet.cpa),
+                    }
+                    for cabinet in item.cabinets
+                ],
+            }
+        )
+    return rows
+
+
+def _winner(rows: list[dict], flag: str) -> dict | None:
+    return next((row for row in rows if row[flag]), None)
+
+
+@router.get("/campaign-types", response_class=HTMLResponse)
+def campaign_types_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    params = request.query_params
+    date_from, date_to, preset = _rsya_period(params)
+    refs, without_goals = cabinet_refs(db)
+    job = get_campaign_types_job(settings, refs, date_from, date_to, force=params.get("refresh") == "1")
+    context: dict = {
+        "user": user,
+        "date_from": date_from,
+        "date_to": date_to,
+        "preset": preset,
+        "presets": RSYA_PRESETS,
+        "query": (
+            {"period": preset}
+            if preset
+            else {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()}
+        ),
+        "without_goals": without_goals,
+        "running": job.running,
+        "progress_done": job.done,
+        "progress_total": job.total,
+        "report": None,
+    }
+    if job.running:
+        return templates.TemplateResponse(request, "campaign_types.html", context)
+
+    report = build_campaign_types_report(job.cabinets, date_from, date_to)
+    by_type = _group_view(report.by_type, report.total_conversions)
+    by_strategy = _group_view(report.by_strategy, report.total_conversions)
+    by_payment = _group_view(report.by_payment, report.total_conversions)
+    context["report"] = {
+        "total_spend": _fmt_money(report.total_spend),
+        "total_conversions": _fmt_conv_count(report.total_conversions),
+        "errors": report.errors,
+        "cabinets_total": report.cabinets_total,
+        "by_type": by_type,
+        "by_payment": by_payment,
+        "by_strategy": by_strategy,
+        "by_budget": _group_view(report.by_budget, report.total_conversions),
+        "best_type": _winner(by_type, "best_conversions"),
+        "best_type_cpa": _winner(by_type, "best_cpa"),
+        "best_strategy": _winner(by_strategy, "best_conversions"),
+        "best_payment": _winner(by_payment, "best_conversions"),
+    }
+    return templates.TemplateResponse(request, "campaign_types.html", context)
 
 
 def _client_reports_period(request: Request) -> tuple[date, date]:

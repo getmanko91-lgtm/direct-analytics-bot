@@ -289,6 +289,51 @@ class YandexDirectClient:
             _collect_goal_ids_from_object(campaign, found)
         return [GoalInfo(goal_id=gid, name=name) for gid, name in sorted(found.items())]
 
+    def fetch_campaign_settings(self) -> list[dict]:
+        """Кампании с блоком стратегии: тип, модель оплаты и бюджет."""
+        field_sets = (
+            {
+                "TextCampaignFieldNames": ["BiddingStrategy"],
+                "UnifiedCampaignFieldNames": ["BiddingStrategy"],
+                "DynamicTextCampaignFieldNames": ["BiddingStrategy"],
+                "SmartCampaignFieldNames": ["BiddingStrategy"],
+                "MobileAppCampaignFieldNames": ["BiddingStrategy"],
+            },
+            {
+                "TextCampaignFieldNames": ["BiddingStrategy"],
+                "UnifiedCampaignFieldNames": ["BiddingStrategy"],
+                "DynamicTextCampaignFieldNames": ["BiddingStrategy"],
+            },
+        )
+        last_error: YandexDirectError | None = None
+        for extra in field_sets:
+            try:
+                return self._fetch_campaign_pages(extra)
+            except YandexDirectError as exc:
+                last_error = exc
+        if last_error:
+            raise last_error
+        return []
+
+    def _fetch_campaign_pages(self, extra_fields: dict[str, list[str]]) -> list[dict]:
+        campaigns: list[dict] = []
+        offset = 0
+        while True:
+            params: dict = {
+                "SelectionCriteria": {"States": ["ON", "SUSPENDED", "OFF", "ENDED"]},
+                "FieldNames": ["Id", "Name", "Type", "State"],
+                "Page": {"Limit": 10000, "Offset": offset},
+            }
+            params.update(extra_fields)
+            result = self._post_json(CAMPAIGNS_URL, {"method": "get", "params": params})
+            batch = result.get("result", {}).get("Campaigns", [])
+            campaigns.extend(batch)
+            limited = result.get("result", {}).get("LimitedBy")
+            if not limited or not batch:
+                break
+            offset = int(limited)
+        return campaigns
+
     def fetch_goals_from_campaigns(self, campaign_ids: list[int] | None = None) -> list[GoalInfo]:
         if campaign_ids is None:
             campaign_ids = self.list_campaign_ids()
