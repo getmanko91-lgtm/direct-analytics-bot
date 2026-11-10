@@ -81,7 +81,31 @@ def test_strategy_index_accepts_numeric_campaign_id():
             },
         }
     ]
-    assert strategies_by_campaign(campaigns)[15][0] == "Максимум кликов"
+    found, packages = strategies_by_campaign(campaigns)
+    assert found[15][0] == "Максимум кликов"
+    assert packages == {}
+
+
+def test_package_strategy_describes_payment_and_budget():
+    from src.services.campaign_types import describe_package_strategy
+
+    described = describe_package_strategy(
+        {
+            "Id": 9,
+            "Type": "PAY_FOR_CONVERSION",
+            "PayForConversion": {"BudgetType": "WEEKLY_BUDGET", "WeeklySpendLimit": 100},
+        }
+    )
+    assert described == ("Оплата за конверсии", "За конверсии", "Недельный бюджет")
+    campaigns = [
+        {
+            "Id": 4,
+            "UnifiedCampaign": {"PackageBiddingStrategy": {"StrategyId": 9}},
+        }
+    ]
+    found, packages = strategies_by_campaign(campaigns)
+    assert found == {}
+    assert packages == {4: 9}
 
 
 def test_types_are_summed_across_cabinets_and_ranked_by_sales():

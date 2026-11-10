@@ -167,28 +167,56 @@ def _budget_kind(node: dict) -> str:
     return "Бюджет не задан"
 
 
-def strategies_by_campaign(campaigns: list[dict]) -> dict[int, tuple[str, str, str]]:
+def describe_package_strategy(strategy: dict) -> tuple[str, str, str]:
+    code = str(strategy.get("Type") or "")
+    name = _STRATEGY_NAMES.get(code, code or "Неизвестная стратегия")
+    if not code:
+        payment = UNKNOWN_PAYMENT
+    elif code in _PAY_FOR_CONVERSION:
+        payment = "За конверсии"
+    else:
+        payment = "За клики"
+    return name, payment, _budget_kind(strategy)
+
+
+def _campaign_block(campaign: dict) -> dict:
+    for key in (
+        "TextCampaign",
+        "UnifiedCampaign",
+        "DynamicTextCampaign",
+        "SmartCampaign",
+        "MobileAppCampaign",
+        "CpmBannerCampaign",
+    ):
+        candidate = campaign.get(key) or {}
+        if isinstance(candidate, dict) and (candidate.get("BiddingStrategy") or candidate.get("PackageBiddingStrategy")):
+            return candidate
+    return {}
+
+
+def strategies_by_campaign(
+    campaigns: list[dict],
+) -> tuple[dict[int, tuple[str, str, str]], dict[int, int]]:
     found: dict[int, tuple[str, str, str]] = {}
+    packages: dict[int, int] = {}
     for campaign in campaigns:
         raw_id = campaign.get("Id")
         campaign_id = raw_id if isinstance(raw_id, int) else _parse_int(str(raw_id or ""))
         if not campaign_id:
             continue
-        block = None
-        for key in (
-            "TextCampaign",
-            "UnifiedCampaign",
-            "DynamicTextCampaign",
-            "SmartCampaign",
-            "MobileAppCampaign",
-            "CpmBannerCampaign",
+        block = _campaign_block(campaign)
+        bidding = block.get("BiddingStrategy")
+        package = block.get("PackageBiddingStrategy") if isinstance(block.get("PackageBiddingStrategy"), dict) else {}
+        package_id = package.get("StrategyId") if isinstance(package, dict) else None
+        if isinstance(bidding, dict) and bidding.get("BiddingStrategyType") or (
+            isinstance(bidding, dict) and ("Search" in bidding or "Network" in bidding)
         ):
-            candidate = campaign.get(key) or {}
-            if isinstance(candidate, dict) and candidate.get("BiddingStrategy"):
-                block = candidate["BiddingStrategy"]
-                break
-        found[campaign_id] = describe_strategy(block if isinstance(block, dict) else None)
-    return found
+            found[campaign_id] = describe_strategy(bidding)
+        elif isinstance(package_id, int) and package_id:
+            packages[campaign_id] = package_id
+        else:
+            found[campaign_id] = (UNKNOWN_STRATEGY, UNKNOWN_PAYMENT, UNKNOWN_BUDGET)
+    return found, packages
 
 
 @dataclass(frozen=True)
@@ -419,7 +447,17 @@ def _load_cabinet(settings: Settings, ref: CabinetRef, date_from: date, date_to:
     strategy_error = None
     strategies: dict[int, tuple[str, str, str]] = {}
     try:
-        strategies = strategies_by_campaign(api.fetch_campaign_settings())
+        strategies, packages = strategies_by_campaign(api.fetch_campaign_settings())
+        if packages:
+            described = {
+                item.get("Id"): describe_package_strategy(item)
+                for item in api.fetch_package_strategies(list(packages.values()))
+            }
+            for campaign_id, strategy_id in packages.items():
+                strategies[campaign_id] = described.get(
+                    strategy_id,
+                    (UNKNOWN_STRATEGY, UNKNOWN_PAYMENT, UNKNOWN_BUDGET),
+                )
     except Exception as exc:
         logger.warning("Типы кампаний: стратегии кабинета %s: %s", ref.client_name, exc)
         strategy_error = str(exc)[:300]

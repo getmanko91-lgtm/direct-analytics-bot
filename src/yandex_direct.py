@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 REPORTS_URL = "https://api.direct.yandex.com/json/v5/reports"
 CAMPAIGNS_URL = "https://api.direct.yandex.com/json/v5/campaigns"
+STRATEGIES_URL = "https://api.direct.yandex.com/json/v5/strategies"
 LIVE_V4_URL = "https://api.direct.yandex.com/live/v4/json/"
 METRIKA_GOALS_URL = "https://api-metrika.yandex.net/management/v1/counter/{counter_id}/goals"
 
@@ -293,15 +294,15 @@ class YandexDirectClient:
         """Кампании с блоком стратегии: тип, модель оплаты и бюджет."""
         field_sets = (
             {
-                "TextCampaignFieldNames": ["BiddingStrategy"],
-                "UnifiedCampaignFieldNames": ["BiddingStrategy"],
+                "TextCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
+                "UnifiedCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
                 "DynamicTextCampaignFieldNames": ["BiddingStrategy"],
                 "SmartCampaignFieldNames": ["BiddingStrategy"],
-                "MobileAppCampaignFieldNames": ["BiddingStrategy"],
+                "MobileAppCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
             },
             {
-                "TextCampaignFieldNames": ["BiddingStrategy"],
-                "UnifiedCampaignFieldNames": ["BiddingStrategy"],
+                "TextCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
+                "UnifiedCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
                 "DynamicTextCampaignFieldNames": ["BiddingStrategy"],
             },
         )
@@ -320,7 +321,7 @@ class YandexDirectClient:
         offset = 0
         while True:
             params: dict = {
-                "SelectionCriteria": {"States": ["ON", "SUSPENDED", "OFF", "ENDED"]},
+                "SelectionCriteria": {"States": ["ON", "SUSPENDED", "OFF", "ENDED", "ARCHIVED"]},
                 "FieldNames": ["Id", "Name", "Type", "State"],
                 "Page": {"Limit": 10000, "Offset": offset},
             }
@@ -333,6 +334,38 @@ class YandexDirectClient:
                 break
             offset = int(limited)
         return campaigns
+
+    def fetch_package_strategies(self, strategy_ids: list[int]) -> list[dict]:
+        """Пакетные стратегии: в кабинете это общий блок «Бюджет и стратегия»."""
+        unique = list(dict.fromkeys(strategy_id for strategy_id in strategy_ids if strategy_id))
+        if not unique:
+            return []
+        budget_fields = ["WeeklySpendLimit", "CustomPeriodBudget", "BudgetType"]
+        found: list[dict] = []
+        for chunk in _chunked(unique, 1000):
+            result = self._post_json(
+                STRATEGIES_URL,
+                {
+                    "method": "get",
+                    "params": {
+                        "SelectionCriteria": {"Ids": list(chunk)},
+                        "FieldNames": ["Id", "Type", "Name"],
+                        "StrategyMaximumClicksFieldNames": budget_fields,
+                        "StrategyMaximumConversionRateFieldNames": [*budget_fields, "GoalId"],
+                        "StrategyAverageCpcFieldNames": budget_fields,
+                        "StrategyAverageCpaFieldNames": budget_fields,
+                        "StrategyAverageCpaMultipleGoalsFieldNames": ["WeeklySpendLimit", "CustomPeriodBudget", "BudgetType"],
+                        "StrategyMaxProfitFieldNames": budget_fields,
+                        "StrategyPayForConversionFieldNames": budget_fields,
+                        "StrategyPayForConversionMultipleGoalsFieldNames": ["WeeklySpendLimit", "CustomPeriodBudget"],
+                        "StrategyAverageCrrFieldNames": budget_fields,
+                        "StrategyPayForConversionCrrFieldNames": budget_fields,
+                        "StrategyHighestPositionFieldNames": ["WeeklySpendLimit"],
+                    },
+                },
+            )
+            found.extend(result.get("result", {}).get("Strategies", []))
+        return found
 
     def fetch_goals_from_campaigns(self, campaign_ids: list[int] | None = None) -> list[GoalInfo]:
         if campaign_ids is None:
