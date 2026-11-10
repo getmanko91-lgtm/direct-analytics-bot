@@ -297,8 +297,6 @@ class YandexDirectClient:
                 "TextCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
                 "UnifiedCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
                 "DynamicTextCampaignFieldNames": ["BiddingStrategy"],
-                "SmartCampaignFieldNames": ["BiddingStrategy"],
-                "MobileAppCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
             },
             {
                 "TextCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
@@ -307,21 +305,46 @@ class YandexDirectClient:
             },
         )
         last_error: YandexDirectError | None = None
+        campaigns: list[dict] | None = None
         for extra in field_sets:
             try:
-                return self._fetch_campaign_pages(extra)
+                campaigns = self._fetch_campaign_pages(extra)
+                break
             except YandexDirectError as exc:
                 last_error = exc
-        if last_error:
-            raise last_error
-        return []
+        if campaigns is None:
+            if last_error:
+                raise last_error
+            return []
+        try:
+            extra_rows = self._fetch_campaign_pages(
+                {
+                    "SmartCampaignFieldNames": ["BiddingStrategy"],
+                    "MobileAppCampaignFieldNames": ["BiddingStrategy", "PackageBiddingStrategy"],
+                    "CpmBannerCampaignFieldNames": ["BiddingStrategy"],
+                }
+            )
+        except YandexDirectError:
+            extra_rows = []
+        merged = {campaign.get("Id"): campaign for campaign in campaigns}
+        for row in extra_rows:
+            current = merged.get(row.get("Id"))
+            if current is None:
+                merged[row.get("Id")] = row
+                continue
+            for key in ("SmartCampaign", "MobileAppCampaign", "CpmBannerCampaign"):
+                if row.get(key):
+                    current[key] = row[key]
+        return list(merged.values())
 
     def _fetch_campaign_pages(self, extra_fields: dict[str, list[str]]) -> list[dict]:
         campaigns: list[dict] = []
         offset = 0
         while True:
             params: dict = {
-                "SelectionCriteria": {"States": ["ON", "SUSPENDED", "OFF", "ENDED", "ARCHIVED"]},
+                "SelectionCriteria": {
+                    "States": ["ON", "SUSPENDED", "OFF", "ENDED", "ARCHIVED", "CONVERTED"]
+                },
                 "FieldNames": ["Id", "Name", "Type", "State"],
                 "Page": {"Limit": 10000, "Offset": offset},
             }

@@ -58,6 +58,15 @@ _PAY_FOR_CONVERSION = {
 }
 
 UNKNOWN_STRATEGY = "Стратегия не найдена"
+
+_API_CAMPAIGN_TYPES = {
+    "TEXT_CAMPAIGN": "ТГО",
+    "UNIFIED_CAMPAIGN": "ЕПК Директа",
+    "SMART_CAMPAIGN": "Мастер кампаний",
+    "DYNAMIC_TEXT_CAMPAIGN": "динамические объявления",
+    "MOBILE_APP_CAMPAIGN": "реклама приложения",
+    "CPM_BANNER_CAMPAIGN": "медийная кампания",
+}
 UNKNOWN_PAYMENT = "Не определена"
 UNKNOWN_BUDGET = "Не определён"
 
@@ -215,7 +224,9 @@ def strategies_by_campaign(
         elif isinstance(package_id, int) and package_id:
             packages[campaign_id] = package_id
         else:
-            found[campaign_id] = (UNKNOWN_STRATEGY, UNKNOWN_PAYMENT, UNKNOWN_BUDGET)
+            api_type = _API_CAMPAIGN_TYPES.get(str(campaign.get("Type") or ""))
+            label = f"{UNKNOWN_STRATEGY}, {api_type}" if api_type else UNKNOWN_STRATEGY
+            found[campaign_id] = (label, UNKNOWN_PAYMENT, UNKNOWN_BUDGET)
     return found, packages
 
 
