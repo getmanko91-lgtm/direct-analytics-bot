@@ -198,7 +198,7 @@ def build_ad_texts_report(
             errors.append((item.cabinet.client_name, item.error))
             continue
         if item.text_error:
-            errors.append((item.cabinet.client_name, f"Тексты объявлений не загрузились: {item.text_error}"))
+            errors.append((item.cabinet.client_name, item.text_error))
         for ad in item.ads:
             key = text_identity(ad.title, ad.body, ad.ad_id)
             bucket = buckets.setdefault(
@@ -303,10 +303,11 @@ def _load_cabinet(settings: Settings, ref: CabinetRef, date_from: date, date_to:
         try:
             raw_ads, copy_error = api.fetch_ads(list(ads))
             apply_ad_copies(ads, raw_ads)
-            if copy_error and not any(ad.title or ad.body for ad in ads.values()):
-                text_error = copy_error
-            elif copy_error:
-                logger.warning("Тексты объявлений кабинета %s частично: %s", ref.client_name, copy_error)
+            filled = sum(1 for ad in ads.values() if ad.title or ad.body)
+            if filled < len(ads) or copy_error:
+                text_error = f"тексты нашлись у {filled} из {len(ads)}"
+                if copy_error:
+                    text_error = f"{text_error}. {copy_error}"
         except Exception as exc:
             logger.warning("Тексты объявлений кабинета %s: %s", ref.client_name, exc)
             text_error = str(exc)[:300]
