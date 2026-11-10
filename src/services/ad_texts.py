@@ -42,6 +42,12 @@ def extract_ad_copy(ad: dict) -> tuple[str, str]:
     if titles or texts:
         return " | ".join(titles), " | ".join(texts)
 
+    for shopping_key in ("ShoppingAd", "ListingAd"):
+        shopping = ad.get(shopping_key) if isinstance(ad.get(shopping_key), dict) else {}
+        defaults = _pieces(shopping.get("DefaultTexts"), "Text")
+        if defaults:
+            return "", " | ".join(defaults)
+
     dynamic = ad.get("DynamicTextAd") if isinstance(ad.get("DynamicTextAd"), dict) else {}
     body = _clean(dynamic.get("Text"))
     if body:
@@ -295,7 +301,12 @@ def _load_cabinet(settings: Settings, ref: CabinetRef, date_from: date, date_to:
     text_error = None
     if ads:
         try:
-            apply_ad_copies(ads, api.fetch_ads(list(ads)))
+            raw_ads, copy_error = api.fetch_ads(list(ads))
+            apply_ad_copies(ads, raw_ads)
+            if copy_error and not any(ad.title or ad.body for ad in ads.values()):
+                text_error = copy_error
+            elif copy_error:
+                logger.warning("Тексты объявлений кабинета %s частично: %s", ref.client_name, copy_error)
         except Exception as exc:
             logger.warning("Тексты объявлений кабинета %s: %s", ref.client_name, exc)
             text_error = str(exc)[:300]

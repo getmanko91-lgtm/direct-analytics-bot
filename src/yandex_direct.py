@@ -620,52 +620,63 @@ class YandexDirectClient:
                     _merge_conversion_columns(merged[key], row, list(chunk))
         return list(merged.values())
 
-    def fetch_ads(self, ad_ids: list[int]) -> list[dict]:
-        """Тексты объявлений: заголовок и текст. Объявление без текста просто не попадёт в ответ."""
+    def fetch_ads(self, ad_ids: list[int]) -> tuple[list[dict], str | None]:
+        """Тексты объявлений. Типы запрашиваются отдельно: ошибка одного не стирает остальные."""
         unique = list(dict.fromkeys(ad_id for ad_id in ad_ids if ad_id))
         if not unique:
-            return []
-        field_sets = (
-            {
-                "TextAdFieldNames": ["Title", "Title2", "Text"],
-                "MobileAppAdFieldNames": ["Title", "Text"],
-                "DynamicTextAdFieldNames": ["Text"],
-                "ResponsiveAdFieldNames": ["Titles", "Texts"],
-            },
-            {
-                "TextAdFieldNames": ["Title", "Title2", "Text"],
-                "MobileAppAdFieldNames": ["Title", "Text"],
-                "DynamicTextAdFieldNames": ["Text"],
-            },
+            return [], None
+        families = (
             {"TextAdFieldNames": ["Title", "Title2", "Text"]},
+            {"MobileAppAdFieldNames": ["Title", "Text"]},
+            {"DynamicTextAdFieldNames": ["Text"]},
+            {"ResponsiveAdFieldNames": ["Titles", "Texts"]},
+            {"ShoppingAdFieldNames": ["DefaultTexts"], "ListingAdFieldNames": ["DefaultTexts"]},
         )
+        merged: dict[int, dict] = {}
+        errors: list[str] = []
+        for extra in families:
+            try:
+                rows = self._fetch_ad_family(unique, extra)
+            except YandexDirectError as exc:
+                errors.append(str(exc)[:200])
+                continue
+            for ad in rows:
+                raw_id = ad.get("Id")
+                ad_id = raw_id if isinstance(raw_id, int) else _parse_int(str(raw_id or ""))
+                if not ad_id:
+                    continue
+                current = merged.setdefault(ad_id, {"Id": ad_id})
+                for key, value in ad.items():
+                    if value:
+                        current[key] = value
+        if not merged and errors:
+            raise YandexDirectError(errors[0])
+        return list(merged.values()), "; ".join(errors) or None
+
+    def _fetch_ad_family(self, ad_ids: list[int], extra_fields: dict[str, list[str]]) -> list[dict]:
         found: list[dict] = []
-        chosen: dict[str, list[str]] | None = None
-        last_error: YandexDirectError | None = None
-        for chunk in _chunked(unique, 1000):
-            ads: list[dict] | None = None
-            candidates = (chosen,) if chosen is not None else field_sets
-            for extra in candidates:
-                try:
-                    ads = self._fetch_ad_pages(list(chunk), extra)
-                    chosen = extra
-                    break
-                except YandexDirectError as exc:
-                    last_error = exc
-                    chosen = None
-            if ads is None:
-                if last_error:
-                    raise last_error
-                return found
-            found.extend(ads)
+        for chunk in _chunked(ad_ids, 1000):
+            try:
+                found.extend(self._fetch_ad_pages(list(chunk), extra_fields, with_states=True))
+            except YandexDirectError:
+                found.extend(self._fetch_ad_pages(list(chunk), extra_fields, with_states=False))
         return found
 
-    def _fetch_ad_pages(self, ad_ids: list[int], extra_fields: dict[str, list[str]]) -> list[dict]:
+    def _fetch_ad_pages(
+        self,
+        ad_ids: list[int],
+        extra_fields: dict[str, list[str]],
+        *,
+        with_states: bool,
+    ) -> list[dict]:
         ads: list[dict] = []
         offset = 0
         while True:
+            criteria: dict = {"Ids": ad_ids}
+            if with_states:
+                criteria["States"] = ["ON", "OFF", "SUSPENDED", "OFF_BY_MONITORING", "ARCHIVED"]
             params: dict = {
-                "SelectionCriteria": {"Ids": ad_ids},
+                "SelectionCriteria": criteria,
                 "FieldNames": ["Id", "Type"],
                 "Page": {"Limit": 10000, "Offset": offset},
             }

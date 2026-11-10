@@ -32,6 +32,7 @@ def test_extract_ad_copy_reads_text_and_responsive_ads():
         {"ResponsiveAd": {"Titles": ["Роллы", "Сеты"], "Texts": [{"Text": "Скидка вечером"}]}}
     ) == ("Роллы | Сеты", "Скидка вечером")
     assert extract_ad_copy({"Id": 5}) == ("", "")
+    assert extract_ad_copy({"ShoppingAd": {"DefaultTexts": ["Сет за 999 ₽"]}}) == ("", "Сет за 999 ₽")
 
 
 def test_same_text_keeps_one_identity_and_missing_text_stays_per_ad():
