@@ -7,7 +7,7 @@
 <div class="page-header">
   <div>
     <h1>Площадки РСЯ</h1>
-    <p class="muted">Все кабинеты за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. Конверсии — по целям, выбранным у каждого клиента, в его модели атрибуции.</p>
+    <p class="muted">Все кабинеты за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. Как на странице KPI: только кампании «КОНВЕР», «МК», «ЕПК», «ТМК», конверсии — по целям, выбранным у каждого клиента, в его модели атрибуции.</p>
   </div>
   {% if report %}
   <form method="post" action="/rsya/send">

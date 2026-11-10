@@ -17,7 +17,7 @@ from src.yandex_direct import _parse_float, conversions_for_goal
 KPI_CAMPAIGN_PREFIXES = ("КОНВЕР", "МК", "ЕПК", "ТМК")
 
 
-def _is_kpi_campaign(campaign_name: str) -> bool:
+def is_kpi_campaign(campaign_name: str) -> bool:
     upper = campaign_name.strip().upper()
     return any(upper.startswith(prefix) for prefix in KPI_CAMPAIGN_PREFIXES)
 
@@ -118,7 +118,7 @@ def _aggregate_kpi_campaigns(
     conversions = 0.0
     for row in rows:
         campaign_name = (row.get("CampaignName") or "").strip()
-        if not _is_kpi_campaign(campaign_name):
+        if not is_kpi_campaign(campaign_name):
             continue
         spend_raw += _parse_float(row.get("Cost", "0"))
         for gid in goal_ids:

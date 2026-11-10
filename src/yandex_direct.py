@@ -386,9 +386,13 @@ class YandexDirectClient:
         date_to: date,
         goal_ids: list[int],
         attribution_model: str,
+        *,
+        by_campaign: bool = False,
     ) -> list[dict[str, str]]:
         """Статистика по площадкам РСЯ (AD_NETWORK), как в Мастере отчётов."""
         field_names = ["Placement", "Cost", "Clicks", "Impressions", "Conversions", "CostPerConversion"]
+        if by_campaign:
+            field_names.insert(0, "CampaignName")
         filters = [{"Field": "AdNetworkType", "Operator": "EQUALS", "Values": ["AD_NETWORK"]}]
 
         if not goal_ids:
@@ -403,7 +407,7 @@ class YandexDirectClient:
                 report_name_prefix="RsyaPlacements",
             )
 
-        merged: dict[str, dict[str, str]] = {}
+        merged: dict[tuple[str, str], dict[str, str]] = {}
         for chunk in _chunked(goal_ids, MAX_GOALS_PER_REQUEST):
             rows = self._fetch_report_ex(
                 date_from,
@@ -416,7 +420,7 @@ class YandexDirectClient:
                 report_name_prefix="RsyaPlacements",
             )
             for row in rows:
-                key = row.get("Placement", "").strip() or "—"
+                key = (row.get("CampaignName", "").strip(), row.get("Placement", "").strip() or "—")
                 if key not in merged:
                     merged[key] = dict(row)
                 else:

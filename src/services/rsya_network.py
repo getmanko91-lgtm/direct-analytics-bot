@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.config import Settings
 from src.db.models import Client
+from src.services.kpi_table import is_kpi_campaign
 from src.services.parallel_fetch import map_parallel
 from src.vat import cost_with_vat
 from src.yandex_direct import YandexDirectClient, _parse_float, _parse_int, conversions_for_goal
@@ -144,6 +145,8 @@ def parse_cabinet_placements(
     for row in rows:
         placement = (row.get("Placement") or "").strip()
         if not placement or placement == "—":
+            continue
+        if not is_kpi_campaign(row.get("CampaignName") or ""):
             continue
         bucket = totals.setdefault(placement, [0.0, 0.0, 0.0, 0.0])
         bucket[0] += _parse_float(row.get("Cost", "0"))
@@ -353,6 +356,7 @@ def _load_cabinet(settings: Settings, ref: CabinetRef, date_from: date, date_to:
             date_to,
             list(ref.goal_ids),
             ref.attribution_model,
+            by_campaign=True,
         )
         placements = parse_cabinet_placements(rows, ref.goal_ids, ref.attribution_model, settings.vat_rate)
         return CabinetPlacements(cabinet=ref, placements=placements)

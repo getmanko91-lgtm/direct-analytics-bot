@@ -26,11 +26,12 @@ def _stat(spend: float, conversions: float = 0, clicks: int = 10) -> PlacementSt
     return PlacementStat(spend=spend, clicks=clicks, impressions=clicks * 50, conversions=conversions)
 
 
-def test_parse_sums_rows_applies_vat_and_counts_selected_goals():
+def test_parse_sums_kpi_campaign_rows_applies_vat_and_counts_selected_goals():
     rows = [
-        {"Placement": "game.ru", "Cost": "1000", "Clicks": "5", "Impressions": "100", "Conversions_11_AUTO": "0"},
-        {"Placement": "game.ru", "Cost": "500", "Clicks": "3", "Impressions": "50", "Conversions_11_AUTO": "1"},
-        {"Placement": "", "Cost": "999", "Clicks": "1", "Impressions": "1"},
+        {"CampaignName": "КОНВЕР РСЯ", "Placement": "game.ru", "Cost": "1000", "Clicks": "5", "Impressions": "100", "Conversions_11_AUTO": "0"},
+        {"CampaignName": "ЕПК Сеть", "Placement": "game.ru", "Cost": "500", "Clicks": "3", "Impressions": "50", "Conversions_11_AUTO": "1"},
+        {"CampaignName": "Охват РСЯ", "Placement": "game.ru", "Cost": "700", "Clicks": "9", "Impressions": "900", "Conversions_11_AUTO": "4"},
+        {"CampaignName": "КОНВЕР РСЯ", "Placement": "", "Cost": "999", "Clicks": "1", "Impressions": "1"},
     ]
     parsed = parse_cabinet_placements(rows, (11,), "AUTO", 0.22)
     assert list(parsed) == ["game.ru"]
