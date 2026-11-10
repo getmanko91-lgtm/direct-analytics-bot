@@ -27,6 +27,15 @@ from src.yandex_direct import YandexDirectClient, _parse_float, _parse_int, conv
 
 logger = logging.getLogger(__name__)
 
+_CRITERION_LABELS = {
+    "AUTOTARGETING": "Автотаргетинг",
+    "RETARGETING": "Ретаргетинг",
+    "AUDIENCE": "Аудитория",
+    "INTERESTS": "Интересы",
+    "MOBILE_APP_CATEGORY": "Категория приложения",
+    "OFFER_RETARGETING": "Ретаргетинг по офферу",
+}
+
 RESULT_TTL_SECONDS = 6 * 60 * 60
 
 
@@ -41,11 +50,13 @@ def parse_cabinet_keywords(
     for row in rows:
         if not is_kpi_campaign(row.get("CampaignName") or ""):
             continue
+        kind = (row.get("CriterionType") or "KEYWORD").strip().upper()
         raw = " ".join((row.get("Criterion") or "").split())
-        if not raw or raw == "—":
+        if kind != "KEYWORD":
+            label = _CRITERION_LABELS.get(kind, kind.replace("_", " ").capitalize())
+            raw = label if not raw or raw == "—" or raw.startswith("---") else f"{label}: {raw}"
+        elif not raw or raw == "—" or raw.startswith("---"):
             continue
-        if raw.startswith("---"):
-            raw = "Автотаргетинг"
         key = raw.casefold()
         labels.setdefault(key, raw)
         bucket = totals.setdefault(key, [0.0, 0.0, 0.0, 0.0])
@@ -186,7 +197,7 @@ def _job_key(settings: Settings, refs: list[CabinetRef], date_from: date, date_t
         settings.yandex_token,
         date_from.isoformat(),
         date_to.isoformat(),
-        "kw-v2",
+        "kw-v3",
         tuple((ref.client_id, ref.goal_ids, ref.attribution_model) for ref in refs),
     )
 

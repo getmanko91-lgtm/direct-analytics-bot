@@ -48,6 +48,7 @@ def test_parse_keywords_keeps_kpi_campaigns_and_merges_case():
         },
         {
             "CampaignName": "МК Поиск",
+            "CriterionType": "AUTOTARGETING",
             "Criterion": "---autotargeting",
             "Cost": "800",
             "Clicks": "8",

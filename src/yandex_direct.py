@@ -536,9 +536,10 @@ class YandexDirectClient:
         goal_ids: list[int],
         attribution_model: str,
     ) -> list[dict[str, str]]:
-        """Ключевые фразы на поиске и в РСЯ. Без автотаргетинга и аудиторий."""
+        """Фразы, автотаргетинг и аудитории на поиске и в РСЯ."""
         field_names = [
             "CampaignName",
+            "CriterionType",
             "CriterionId",
             "Criterion",
             "Cost",
@@ -547,7 +548,7 @@ class YandexDirectClient:
             "Conversions",
             "CostPerConversion",
         ]
-        filters = [{"Field": "CriterionType", "Operator": "EQUALS", "Values": ["KEYWORD"]}]
+        filters = None
 
         if not goal_ids:
             return self._fetch_report_ex(
