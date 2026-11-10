@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}VK Nikitos Analytics{% endblock %}
+{% block head %}
+{% if running %}<meta http-equiv="refresh" content="5">{% endif %}
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>
+      {% if section == 'campaigns' %}Кампании
+      {% elif section == 'texts' %}Лучшие тексты
+      {% elif section == 'audiences' %}Целевые аудитории
+      {% elif section == 'clients' %}Клиенты
+      {% else %}Сводка{% endif %}
+    </h1>
+    <p class="muted">Все кабинеты VK Рекламы за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. Результат — цели VK, расход с НДС 22%. Одинаковый текст в разных кабинетах сложен.</p>
+  </div>
+</div>
+
+<div class="card filters-card">
+  <form method="get" class="filters-form">
+    <label>Дата с
+      <input type="date" name="date_from" value="{{ date_from.isoformat() }}" required>
+    </label>
+    <label>Дата по
+      <input type="date" name="date_to" value="{{ date_to.isoformat() }}" required>
+    </label>
+    <button type="submit" class="btn btn-primary">Показать</button>
+  </form>
+  <div class="quick-filters">
+    <span class="muted">Период:</span>
+    {% for key, label in presets.items() %}
+    <a href="/vk{% if section != 'summary' %}/{{ section }}{% endif %}?period={{ key }}" class="btn btn-sm {% if preset == key %}btn-primary{% else %}btn-secondary{% endif %}">{{ label }}</a>
+    {% endfor %}
+    {% if report %}
+    <a href="/vk{% if section != 'summary' %}/{{ section }}{% endif %}?{{ query | urlencode }}&refresh=1" class="btn btn-secondary btn-sm">Обновить из VK</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{% if running %}
+<div class="card">
+  <h2 class="chart-title">Собираю кабинеты VK…</h2>
+  <p>Готово кабинетов: {{ progress_done }} из {{ progress_total }}. Страница обновится сама.</p>
+  <p class="muted">Сначала общая статистика агентства, затем тексты, кампании и аудитории по кабинетам с расходом. Результат хранится 6 часов.</p>
+</div>
+{% elif report %}
+
+{% if report.errors %}
+<div class="alert alert-warning">
+  {% for name, err in report.errors[:12] %}<div><strong>{{ name }}</strong> — {{ err }}</div>{% endfor %}
+  {% if report.errors|length > 12 %}<div class="muted">И ещё {{ report.errors|length - 12 }} кабинетов без детализации.</div>{% endif %}
+</div>
+{% endif %}
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <span class="summary-label">Кабинетов с результатами</span>
+    <strong class="summary-value">{{ report.clients_with_sales }}</strong>
+    <span class="muted">из {{ report.clients_total }}</span>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Результаты VK</span>
+    <strong class="summary-value">{{ report.total_goals }}</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Расход с НДС</span>
+    <strong class="summary-value">{{ report.total_spend }} ₽</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Лучший CPA</span>
+    <strong class="summary-value">{% if report.best_cpa %}{{ report.best_cpa.cpa }} ₽{% else %}—{% endif %}</strong>
+    {% if report.best_cpa %}<span class="muted">{{ report.best_cpa.name }}, {{ report.best_cpa.goals }} рез.</span>{% endif %}
+  </div>
+</div>
+
+<div class="card placements-card">
+  {% if section == 'summary' or section == 'clients' %}
+  <div class="rsya-all-filters">
+    <label>Поиск кабинета
+      <input type="search" id="vkSearch" placeholder="суши, курган…">
+    </label>
+    <span class="muted" id="vkCount">{{ report.cabinets|length }} кабинетов</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table analytics-table placements-table vk-table">
+      <thead>
+        <tr>
+          <th>Кабинет</th>
+          <th>Результаты</th>
+          <th>CPA, ₽</th>
+          <th>Расход, ₽</th>
+          <th>Клики</th>
+          <th>Показы</th>
+          <th>CTR, %</th>
+          <th>Баланс, ₽</th>
+          <th>Статус</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.cabinets %}
+        <tr data-text="{{ row.search }}" data-empty="{{ '1' if row.goals_value <= 0 and row.spend == '0,00' else '0' }}">
+          <td><div class="ad-text-title">{{ row.name }}</div>{% if row.username %}<div class="muted">{{ row.username }}</div>{% endif %}</td>
+          <td>{{ row.goals }}</td>
+          <td class="{{ row.cpa_class }}">{{ row.cpa }}</td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td>{{ row.shows }}</td>
+          <td>{{ row.ctr }}</td>
+          <td>{{ row.balance }}</td>
+          <td>{{ row.status }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="muted">Нет кабинетов</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif section == 'campaigns' %}
+  <div class="rsya-all-filters">
+    <label>Поиск
+      <input type="search" id="vkSearch" placeholder="кампания или кабинет">
+    </label>
+    <span class="muted" id="vkCount">{{ report.campaigns|length }} кампаний</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table analytics-table vk-table">
+      <thead>
+        <tr>
+          <th>Кампания</th>
+          <th>Результаты</th>
+          <th>CPA, ₽</th>
+          <th>Расход, ₽</th>
+          <th>Клики</th>
+          <th>Кабинет</th>
+          <th>Цель</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.campaigns %}
+        <tr data-text="{{ row.search }}">
+          <td class="wrap">{{ row.name }}</td>
+          <td>{{ row.goals }}</td>
+          <td class="{{ row.cpa_class }}">{{ row.cpa }}</td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td class="wrap">{{ row.client }}</td>
+          <td>{{ row.objective }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">Нет кампаний с расходом за период</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif section == 'texts' %}
+  <div class="rsya-all-filters">
+    <label>Поиск текста
+      <input type="search" id="vkSearch" placeholder="доставка, роллы…">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" id="vkDeleted" checked> Показывать удалённые
+    </label>
+    <span class="muted" id="vkCount">{{ report.texts|length }} текстов</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table analytics-table ad-texts-table vk-table">
+      <thead>
+        <tr>
+          <th>Текст</th>
+          <th>Результаты</th>
+          <th>CPA, ₽</th>
+          <th>Расход, ₽</th>
+          <th>Клики</th>
+          <th>Кабинеты</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.texts %}
+        <tr data-text="{{ row.search }}" data-deleted="{{ '1' if row.deleted else '0' }}">
+          <td>
+            <div class="ad-text-title">{{ row.title }}</div>
+            {% if row.body %}<div class="muted ad-text-body">{{ row.body }}</div>{% endif %}
+          </td>
+          <td>{{ row.goals }}</td>
+          <td class="{{ row.cpa_class }}">{{ row.cpa }}</td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td class="rsya-projects">
+            {% for share in row.shares %}
+            <div>{{ share.name }} — {% if share.goals_value > 0 %}{{ share.goals }} рез.{% if share.cpa != '—' %}, CPA {{ share.cpa }} ₽{% endif %}{% else %}0 рез., {{ share.spend }} ₽{% endif %}</div>
+            {% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">Нет текстов за период</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="rsya-all-filters">
+    <label>Поиск аудитории
+      <input type="search" id="vkSearch" placeholder="сегмент или кабинет">
+    </label>
+    <span class="muted" id="vkCount">{{ report.audiences|length }} аудиторий</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table analytics-table vk-table">
+      <thead>
+        <tr>
+          <th>Аудитория</th>
+          <th>Тип</th>
+          <th>Размер</th>
+          <th>Создана</th>
+          <th>Кабинет</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.audiences %}
+        <tr data-text="{{ row.search }}">
+          <td class="wrap">{{ row.name }}</td>
+          <td>{{ row.kind }}</td>
+          <td>{{ row.users }}</td>
+          <td>{{ row.created }}</td>
+          <td class="wrap">{{ row.client }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">Нет сегментов в кабинетах с расходом</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<script>
+(function () {
+  const search = document.getElementById('vkSearch');
+  const count = document.getElementById('vkCount');
+  const deleted = document.getElementById('vkDeleted');
+  if (!search || !count) return;
+  const rows = Array.from(document.querySelectorAll('.vk-table tbody tr[data-text]'));
+  const noun = count.textContent.replace(/^\d+\s*/, '');
+  function apply() {
+    const query = search.value.trim().toLowerCase();
+    const hideEmpty = {{ 'true' if section == 'summary' else 'false' }};
+    let visible = 0;
+    rows.forEach(function (row) {
+      const show = (!query || row.dataset.text.includes(query))
+        && (!hideEmpty || query || row.dataset.empty !== '1')
+        && (!deleted || deleted.checked || row.dataset.deleted !== '1');
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    count.textContent = visible + ' ' + noun;
+  }
+  search.addEventListener('input', apply);
+  if (deleted) deleted.addEventListener('change', apply);
+  apply();
+})();
+</script>
+{% endblock %}

@@ -34,6 +34,13 @@ class Settings:
     web_host: str
     web_port: int
     vat_rate: float
+    vk_ads_agency_id: str
+    vk_ads_client_id: str
+    vk_ads_client_secret: str
+
+    @property
+    def vk_configured(self) -> bool:
+        return bool(self.vk_ads_client_id and self.vk_ads_client_secret)
 
 
 def load_settings() -> Settings:
@@ -75,4 +82,7 @@ def load_settings() -> Settings:
         web_host=os.getenv("WEB_HOST", "127.0.0.1"),
         web_port=int(os.getenv("WEB_PORT", "8080")),
         vat_rate=VAT_RATE,
+        vk_ads_agency_id=(os.getenv("VK_ADS_AGENCY_ID") or "").strip(),
+        vk_ads_client_id=(os.getenv("VK_ADS_CLIENT_ID") or "").strip(),
+        vk_ads_client_secret=(os.getenv("VK_ADS_CLIENT_SECRET") or "").strip(),
     )

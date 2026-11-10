@@ -15,6 +15,22 @@ echo "==> git pull"
 git fetch origin main
 git reset --hard origin/main
 
+append_env() {
+  local key="$1"
+  local value="$2"
+  if [[ -z "$value" ]]; then
+    return
+  fi
+  if grep -q "^${key}=" .env; then
+    return
+  fi
+  printf '%s=%s\n' "$key" "$value" >> .env
+}
+
+append_env VK_ADS_AGENCY_ID "${VK_ADS_AGENCY_ID:-}"
+append_env VK_ADS_CLIENT_ID "${VK_ADS_CLIENT_ID:-}"
+append_env VK_ADS_CLIENT_SECRET "${VK_ADS_CLIENT_SECRET:-}"
+
 echo "==> docker compose up"
 docker compose up -d --build
 

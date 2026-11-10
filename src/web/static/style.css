@@ -29,6 +29,8 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem 1.5rem;
+  flex-wrap: wrap;
   padding: 1rem 2rem;
   background: rgba(26, 35, 50, 0.95);
   border-bottom: 1px solid var(--border);
@@ -38,16 +40,36 @@ a:hover { text-decoration: underline; }
   z-index: 10;
 }
 
+.brand-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .brand {
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.brand.is-current {
   color: var(--text);
+}
+
+.container-wide {
+  max-width: 1280px;
+}
+
+.vk-table td.wrap {
+  white-space: normal;
 }
 
 .nav-links {
   display: flex;
   gap: 1.25rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .nav-links a { color: var(--muted); }

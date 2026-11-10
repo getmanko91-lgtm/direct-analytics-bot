@@ -18,6 +18,7 @@ from src.db.seed import ensure_admin_user
 from src.services.report_runner import effective_report_schedule, run_all_reports
 from src.web.auth_middleware import LoginRequiredMiddleware
 from src.web.routes import router
+from src.web.vk_routes import router as vk_router
 
 logger = logging.getLogger(__name__)
 
@@ -101,4 +102,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(router)
+    app.include_router(vk_router)
     return app

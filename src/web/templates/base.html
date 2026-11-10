@@ -4,14 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Direct Nikitos Analytics{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261110k">
+  <link rel="stylesheet" href="/static/style.css?v=20261110l">
   {% block head %}{% endblock %}
 </head>
 <body>
   {% if user %}
+  {% set on_vk = request.url.path == '/vk' or request.url.path.startswith('/vk/') %}
   <nav class="nav">
-    <a href="/" class="brand">Direct Nikitos Analytics</a>
+    <div class="brand-switch">
+      <a href="/" class="brand {% if not on_vk %}is-current{% endif %}">Direct Nikitos Analytics</a>
+      <a href="/vk" class="brand {% if on_vk %}is-current{% endif %}">VK Nikitos Analytics</a>
+    </div>
     <div class="nav-links">
+      {% if on_vk %}
+      <a href="/vk">Сводка</a>
+      <a href="/vk/campaigns">Кампании</a>
+      <a href="/vk/texts">Лучшие тексты</a>
+      <a href="/vk/audiences">ЦА</a>
+      <a href="/vk/clients">Клиенты</a>
+      {% else %}
       <a href="/">Сводка</a>
       <a href="/kpi">KPI</a>
       <a href="/rsya">Площадки РСЯ</a>
@@ -21,6 +32,7 @@
       <a href="/client-reports">Отчеты клиентам</a>
       <a href="/clients">Клиенты</a>
       <a href="/settings">Настройки</a>
+      {% endif %}
       <a href="/profile">{{ user.display_name or user.username }}</a>
       <form action="/logout" method="post" class="inline">
         <button type="submit" class="link-btn">Выйти</button>
@@ -29,7 +41,7 @@
   </nav>
   {% endif %}
 
-  <main class="container">
+  <main class="container {% if user and (request.url.path == '/vk' or request.url.path.startswith('/vk/')) %}container-wide{% endif %}">
     {% block content %}{% endblock %}
   </main>
 </body>
