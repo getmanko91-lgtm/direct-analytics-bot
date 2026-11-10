@@ -61,8 +61,27 @@ a:hover { text-decoration: underline; }
   max-width: 1280px;
 }
 
+.container-full {
+  max-width: none;
+}
+
 .vk-table td.wrap {
   white-space: normal;
+}
+
+.vk-project-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.vk-project-table th,
+.vk-project-table td {
+  white-space: normal;
+}
+
+.vk-project-table .num {
+  white-space: nowrap;
+  text-align: right;
 }
 
 .nav-links {

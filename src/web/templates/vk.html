@@ -96,7 +96,7 @@
 <div class="card placements-card">
   {% if section == 'summary' or section == 'campaigns' %}
   <h2 class="chart-title">Результаты по типу кампании</h2>
-  <p class="muted">Имя кампании: «ЗК / …» и «ZK / …» — закрытый клуб, «Вступ… / …» — вступление в группу, «Универс…» — Senler. Приставка «копия» тип не меняет. Удалённые и заблокированные кабинеты в отчёт не входят.</p>
+  <p class="muted">На заказ — расход кампаний «ЗК / …». На вступление — расход кампаний «Вступ… / …». Подписки — их результат в кабинете, цена — этот расход с НДС 22% на одну подписку. Универс здесь не считается: его подписки только в Senler.</p>
   <div class="table-wrap">
     <table class="table analytics-table">
       <thead>
@@ -130,39 +130,27 @@
     <span class="muted" id="vkCount">{{ report.cabinets|length }} кабинетов</span>
   </div>
   <div class="table-wrap">
-    <table class="table analytics-table placements-table vk-table">
+    <table class="table analytics-table vk-table vk-project-table">
       <thead>
         <tr>
-          <th>Кабинет</th>
-          <th>ЗК</th>
-          <th>Вступления</th>
-          <th>Всего в кабинете</th>
-          <th>CPA, ₽</th>
-          <th>Расход, ₽</th>
-          <th>Клики</th>
-          <th>Показы</th>
-          <th>CTR, %</th>
-          <th>Баланс, ₽</th>
-          <th>Статус</th>
+          <th>Проект</th>
+          <th class="num">На заказ, ₽</th>
+          <th class="num">На вступление, ₽</th>
+          <th class="num">Подписки</th>
+          <th class="num">Цена подписки, ₽</th>
         </tr>
       </thead>
       <tbody>
         {% for row in report.cabinets %}
-        <tr data-text="{{ row.search }}" data-empty="{{ '1' if row.goals_value <= 0 and row.spend == '0,00' else '0' }}">
-          <td><div class="ad-text-title">{{ row.name }}</div>{% if row.username %}<div class="muted">{{ row.username }}</div>{% endif %}</td>
-          <td>{{ row.zk }}</td>
-          <td>{{ row.join }}</td>
-          <td>{{ row.goals }}</td>
-          <td class="{{ row.cpa_class }}">{{ row.cpa }}</td>
-          <td>{{ row.spend }}</td>
-          <td>{{ row.clicks }}</td>
-          <td>{{ row.shows }}</td>
-          <td>{{ row.ctr }}</td>
-          <td>{{ row.balance }}</td>
-          <td>{{ row.status }}</td>
+        <tr data-text="{{ row.search }}">
+          <td>{{ row.name }}</td>
+          <td class="num">{{ row.order_spend }}</td>
+          <td class="num">{{ row.join_spend }}</td>
+          <td class="num">{{ row.subscriptions }}</td>
+          <td class="num {{ row.cpa_class }}">{{ row.price }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="11" class="muted">Нет кабинетов</td></tr>
+        <tr><td colspan="5" class="muted">Нет кабинетов</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -309,12 +297,10 @@
   function apply() {
     const query = search.value.trim().toLowerCase();
     const selected = kind ? kind.value : '';
-    const hideEmpty = {{ 'true' if section == 'summary' else 'false' }};
     let visible = 0;
     rows.forEach(function (row) {
       const show = (!query || row.dataset.text.includes(query))
         && (!selected || row.dataset.kind === selected)
-        && (!hideEmpty || query || row.dataset.empty !== '1')
         && (!deleted || deleted.checked || row.dataset.deleted !== '1');
       row.hidden = !show;
       if (show) visible += 1;

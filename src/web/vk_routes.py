@@ -12,7 +12,8 @@ from src.services.vk_analytics import (
     VkCabinet,
     VkJob,
     build_vk_report,
-    cabinet_type_goals,
+    cabinet_type_split,
+    project_name,
     campaign_kind,
     campaign_type_totals,
     get_vk_job,
@@ -136,25 +137,22 @@ def _type_rows(totals: dict[str, dict]) -> list[dict]:
 
 
 def _cabinet_row(item: VkCabinet) -> dict:
-    cpa = _cpa(item.spend, item.goals)
-    ctr = item.clicks / item.shows * 100 if item.shows else None
-    split = cabinet_type_goals(item)
+    split = cabinet_type_split(item)
+    order_spend = 0.0 if split is None else split["zk"]["spend"]
+    join_spend = 0.0 if split is None else split["join"]["spend"]
+    subscriptions = 0.0 if split is None else split["join"]["goals"]
+    price = _cpa(join_spend, subscriptions)
+    name = project_name(item.name)
     return {
-        "name": item.name,
-        "username": item.username,
-        "status": status_label(item.status),
-        "balance": _fmt_money(item.balance),
-        "zk": "—" if split is None else _fmt_goals(split["zk"]),
-        "join": "—" if split is None else _fmt_goals(split["join"]),
-        "goals": _fmt_goals(item.goals),
+        "name": name,
+        "order_spend": "—" if split is None else _fmt_money(order_spend),
+        "join_spend": "—" if split is None else _fmt_money(join_spend),
+        "subscriptions": "—" if split is None else _fmt_goals(subscriptions),
+        "price": "—" if price is None else _fmt_money(price),
+        "cpa_class": cpa_highlight_class(price),
         "goals_value": item.goals,
         "spend": _fmt_money(item.spend),
-        "clicks": _fmt_int(item.clicks),
-        "shows": _fmt_int(item.shows),
-        "ctr": "—" if ctr is None else f"{ctr:.2f}".replace(".", ","),
-        "cpa": "—" if cpa is None else _fmt_money(cpa),
-        "cpa_class": cpa_highlight_class(cpa),
-        "search": f"{item.name} {item.username}".casefold(),
+        "search": f"{name} {item.name}".casefold(),
     }
 
 

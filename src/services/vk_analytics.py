@@ -33,6 +33,10 @@ CAMPAIGN_KIND_LABELS = {
     "other": "Другие",
 }
 _COPY_PREFIX = re.compile(r"^(?:копия(?:_\d+)?\s+)+", re.IGNORECASE)
+_LEGAL_ENTITY = re.compile(
+    r"\s*[\(（]\s*(?:ип|ооо|оао|зао|пао|ао|чп)\b.*?[\)）]|\s+(?:ип|ооо|оао|зао|пао)\b.*$",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -140,16 +144,23 @@ def campaign_type_totals(campaigns: list[tuple]) -> dict[str, dict]:
     return totals
 
 
-def cabinet_type_goals(cabinet: VkCabinet) -> dict[str, float] | None:
+def project_name(name: str) -> str:
+    text = _LEGAL_ENTITY.sub("", str(name or ""))
+    text = " ".join(text.split()).strip(" -–—")
+    return text or " ".join(str(name or "").split()) or "—"
+
+
+def cabinet_type_split(cabinet: VkCabinet) -> dict[str, dict[str, float]] | None:
     if not cabinet.campaigns:
         return None
-    goals = {"zk": 0.0, "join": 0.0, "other": 0.0}
+    split = {kind: {"goals": 0.0, "spend": 0.0} for kind in ("zk", "join")}
     for plan in cabinet.campaigns:
         kind = campaign_kind(plan.name)
-        if kind == "senler":
+        if kind not in split:
             continue
-        goals[kind] += plan.goals
-    return goals
+        split[kind]["goals"] += plan.goals
+        split[kind]["spend"] += plan.spend
+    return split
 
 
 def goals_of(base: dict) -> float:

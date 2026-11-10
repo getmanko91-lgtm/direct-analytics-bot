@@ -9,6 +9,7 @@ from src.services.vk_analytics import (
     campaign_type_totals,
     goals_of,
     is_live_cabinet,
+    project_name,
 )
 
 
@@ -62,6 +63,12 @@ def _cabinet(client_id: int, name: str, status: str, goals: float, spend: float,
         goals=goals,
         error=error,
     )
+
+
+def test_project_name_drops_legal_entity():
+    assert project_name("Пряников Иркутск (ИП Васильева Анастасия)") == "Пряников Иркутск"
+    assert project_name("Гринпарк Феодосия (ООО «ИДЕАЛ»)") == "Гринпарк Феодосия"
+    assert project_name('Русский Лес (ООО "Фудстайл")') == "Русский Лес"
 
 
 def test_archived_cabinets_are_excluded():
