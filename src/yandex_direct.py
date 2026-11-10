@@ -589,7 +589,7 @@ class YandexDirectClient:
         attribution_model: str,
     ) -> list[dict[str, str]]:
         """Статистика объявлений на поиске и в РСЯ, без разбивки по дням."""
-        field_names = ["CampaignName", "AdId", "Cost", "Clicks", "Impressions", "Conversions", "CostPerConversion"]
+        field_names = ["CampaignId", "CampaignName", "AdId", "Cost", "Clicks", "Impressions", "Conversions", "CostPerConversion"]
         if not goal_ids:
             return self._fetch_report_ex(
                 date_from,
@@ -625,7 +625,31 @@ class YandexDirectClient:
         unique = list(dict.fromkeys(ad_id for ad_id in ad_ids if ad_id))
         if not unique:
             return [], None
+        return self._collect_ads(unique, by_campaign=False, state_sets=(None, ["ARCHIVED"]))
+
+    def fetch_archived_ads(self, campaign_ids: list[int]) -> tuple[list[dict], str | None]:
+        """Архивные объявления кампаний: в кабинете это удалённые и остановленные в архив."""
+        unique = list(dict.fromkeys(campaign_id for campaign_id in campaign_ids if campaign_id))
+        if not unique:
+            return [], None
+        return self._collect_ads(unique, by_campaign=True, state_sets=(["ARCHIVED"],))
+
+    def _collect_ads(
+        self,
+        ids: list[int],
+        *,
+        by_campaign: bool,
+        state_sets: tuple[list[str] | None, ...],
+    ) -> tuple[list[dict], str | None]:
         families = (
+            {
+                "TextAdFieldNames": ["Title", "Title2", "Text"],
+                "MobileAppAdFieldNames": ["Title", "Text"],
+                "DynamicTextAdFieldNames": ["Text"],
+                "ResponsiveAdFieldNames": ["Titles", "Texts"],
+                "ShoppingAdFieldNames": ["DefaultTexts"],
+                "ListingAdFieldNames": ["DefaultTexts"],
+            },
             {"TextAdFieldNames": ["Title", "Title2", "Text"]},
             {"MobileAppAdFieldNames": ["Title", "Text"]},
             {"DynamicTextAdFieldNames": ["Text"]},
@@ -634,12 +658,11 @@ class YandexDirectClient:
         )
         merged: dict[int, dict] = {}
         errors: list[str] = []
-        for extra in families:
-            try:
-                rows = self._fetch_ad_family(unique, extra)
-            except YandexDirectError as exc:
-                errors.append(str(exc)[:200])
-                continue
+        chunk_size = 10 if by_campaign else 1000
+        for states in state_sets:
+            rows, error = self._fetch_ads_fallback(ids, families, states=states, by_campaign=by_campaign, chunk_size=chunk_size)
+            if error:
+                errors.append(error)
             for ad in rows:
                 raw_id = ad.get("Id")
                 ad_id = raw_id if isinstance(raw_id, int) else _parse_int(str(raw_id or ""))
@@ -651,33 +674,65 @@ class YandexDirectClient:
                         current[key] = value
         if not merged and errors:
             raise YandexDirectError(errors[0])
-        return list(merged.values()), "; ".join(errors) or None
+        return list(merged.values()), "; ".join(dict.fromkeys(errors)) or None
 
-    def _fetch_ad_family(self, ad_ids: list[int], extra_fields: dict[str, list[str]]) -> list[dict]:
-        found: list[dict] = []
-        for chunk in _chunked(ad_ids, 1000):
+    def _fetch_ads_fallback(
+        self,
+        ids: list[int],
+        families: tuple[dict[str, list[str]], ...],
+        *,
+        states: list[str] | None,
+        by_campaign: bool,
+        chunk_size: int,
+    ) -> tuple[list[dict], str | None]:
+        combined, *rest = families
+        try:
+            return self._fetch_ad_page_chunks(ids, combined, states=states, by_campaign=by_campaign, chunk_size=chunk_size), None
+        except YandexDirectError as exc:
+            last_error: YandexDirectError | None = exc
+        rows: list[dict] = []
+        any_ok = False
+        for extra in rest:
             try:
-                found.extend(self._fetch_ad_pages(list(chunk), extra_fields, with_states=True))
-            except YandexDirectError:
-                found.extend(self._fetch_ad_pages(list(chunk), extra_fields, with_states=False))
-        return found
+                rows.extend(self._fetch_ad_page_chunks(ids, extra, states=states, by_campaign=by_campaign, chunk_size=chunk_size))
+                any_ok = True
+            except YandexDirectError as exc:
+                last_error = exc
+        if any_ok:
+            return rows, None
+        return [], str(last_error)[:200] if last_error else None
+
+    def _fetch_ad_page_chunks(
+        self,
+        ids: list[int],
+        extra_fields: dict[str, list[str]],
+        *,
+        states: list[str] | None,
+        by_campaign: bool,
+        chunk_size: int,
+    ) -> list[dict]:
+        rows: list[dict] = []
+        for chunk in _chunked(ids, chunk_size):
+            rows.extend(self._fetch_ad_pages(list(chunk), extra_fields, states=states, by_campaign=by_campaign))
+        return rows
 
     def _fetch_ad_pages(
         self,
-        ad_ids: list[int],
+        ids: list[int],
         extra_fields: dict[str, list[str]],
         *,
-        with_states: bool,
+        states: list[str] | None,
+        by_campaign: bool,
     ) -> list[dict]:
         ads: list[dict] = []
         offset = 0
         while True:
-            criteria: dict = {"Ids": ad_ids}
-            if with_states:
-                criteria["States"] = ["ON", "OFF", "SUSPENDED", "OFF_BY_MONITORING", "ARCHIVED"]
+            criteria: dict = {"CampaignIds": ids} if by_campaign else {"Ids": ids}
+            if states:
+                criteria["States"] = states
             params: dict = {
                 "SelectionCriteria": criteria,
-                "FieldNames": ["Id", "Type"],
+                "FieldNames": ["Id", "Type", "State"],
                 "Page": {"Limit": 10000, "Offset": offset},
             }
             params.update(extra_fields)

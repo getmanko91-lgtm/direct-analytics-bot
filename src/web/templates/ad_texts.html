@@ -81,7 +81,7 @@
   <div class="budget-pacing-header">
     <div>
       <h2 class="chart-title">Тексты по числу конверсий</h2>
-      <p class="muted">Сначала тексты, которые принесли больше всего продаж по всем клиентам. CPA — общий расход на этот текст ÷ все его конверсии. Рядом проекты, где текст дал продажи. Удалённые объявления скрыты: Директ уже не отдаёт их текст, статистика за период остаётся.</p>
+      <p class="muted">Сначала тексты, которые принесли больше всего продаж по всем клиентам, включая архивные и удалённые объявления. CPA — общий расход на этот текст ÷ все его конверсии. Рядом проекты, где текст дал продажи. Если Директ больше не хранит текст, строка остаётся со статистикой.</p>
     </div>
     <a href="/ad-texts.csv?{{ query | urlencode }}" class="btn btn-secondary btn-sm btn-nowrap">Скачать CSV</a>
   </div>
@@ -90,10 +90,10 @@
       <input type="search" id="textSearch" placeholder="суши, доставка…">
     </label>
     <label>Конверсий от
-      <input type="search" inputmode="decimal" id="textMinConv" value="1">
+      <input type="search" inputmode="decimal" id="textMinConv" value="0">
     </label>
     <label class="checkbox">
-      <input type="checkbox" id="textDeleted"> Показывать удалённые
+      <input type="checkbox" id="textDeleted" checked> Показывать удалённые
     </label>
     <span class="muted" id="textCount">{{ report.texts | length }} текстов</span>
   </div>
@@ -115,6 +115,7 @@
           <td>
             <div class="ad-text-title">{{ row.title }}</div>
             {% if row.body %}<div class="muted ad-text-body">{{ row.body }}</div>{% endif %}
+            {% if row.archived %}<span class="pace-badge">архив</span>{% endif %}
             {% if row.best_conversions %}<span class="pace-badge pace-ok">больше всего продаж</span>{% endif %}
             {% if row.best_cpa %}<span class="pace-badge pace-under">лучший CPA</span>{% endif %}
           </td>

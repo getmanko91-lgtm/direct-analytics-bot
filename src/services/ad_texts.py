@@ -74,13 +74,16 @@ def parse_cabinet_ads(
         ad_id = _parse_int(row.get("AdId"))
         if not ad_id:
             continue
-        bucket = totals.setdefault(ad_id, [0.0, 0.0, 0.0, 0.0])
+        bucket = totals.setdefault(ad_id, [0.0, 0.0, 0.0, 0.0, 0.0])
         bucket[0] += _parse_float(row.get("Cost", "0"))
         bucket[1] += _parse_int(row.get("Clicks", "0"))
         bucket[2] += _parse_int(row.get("Impressions", "0"))
         bucket[3] += sum(conversions_for_goal(row, gid, attribution_model) for gid in goal_ids)
+        campaign_id = _parse_int(row.get("CampaignId"))
+        if campaign_id:
+            bucket[4] = float(campaign_id)
     ads: dict[int, AdStat] = {}
-    for ad_id, (cost_raw, clicks, impressions, conversions) in totals.items():
+    for ad_id, (cost_raw, clicks, impressions, conversions, campaign_id) in totals.items():
         if cost_raw <= 0 and clicks <= 0 and conversions <= 0:
             continue
         ads[ad_id] = AdStat(
@@ -91,18 +94,32 @@ def parse_cabinet_ads(
             clicks=int(clicks),
             impressions=int(impressions),
             conversions=conversions,
+            campaign_id=int(campaign_id),
         )
     return ads
 
 
 def apply_ad_copies(ads: dict[int, "AdStat"], raw_ads: list[dict]) -> None:
+    _remember_copies(ads, raw_ads)
+
+
+def _remember_copies(ads: dict[int, "AdStat"], raw_ads: list[dict]) -> set[int]:
+    returned: set[int] = set()
     for raw in raw_ads:
         raw_id = raw.get("Id")
         ad_id = raw_id if isinstance(raw_id, int) else _parse_int(str(raw_id or ""))
+        if not ad_id:
+            continue
+        returned.add(ad_id)
         stat = ads.get(ad_id)
         if stat is None:
             continue
-        stat.title, stat.body = extract_ad_copy(raw)
+        if str(raw.get("State") or "") == "ARCHIVED":
+            stat.archived = True
+        title, body = extract_ad_copy(raw)
+        if title or body:
+            stat.title, stat.body = title, body
+    return returned
 
 
 @dataclass
@@ -114,7 +131,9 @@ class AdStat:
     clicks: int
     impressions: int
     conversions: float
+    campaign_id: int = 0
     deleted: bool = False
+    archived: bool = False
 
 
 @dataclass(frozen=True)
@@ -143,6 +162,7 @@ class RankedText:
     impressions: int
     conversions: float
     cabinets: tuple[TextShare, ...]
+    archived: bool = False
 
     @property
     def cpa(self) -> float | None:
@@ -205,11 +225,13 @@ def build_ad_texts_report(
             key = text_identity(ad.title, ad.body, ad.ad_id)
             bucket = buckets.setdefault(
                 key,
-                {"title": ad.title, "body": ad.body, "deleted": ad.deleted, "shares": {}},
+                {"title": ad.title, "body": ad.body, "deleted": ad.deleted, "archived": ad.archived, "shares": {}},
             )
             if not bucket["title"] and not bucket["body"] and (ad.title or ad.body):
                 bucket["title"] = ad.title
                 bucket["body"] = ad.body
+            if not ad.archived:
+                bucket["archived"] = False
             share = bucket["shares"].setdefault(
                 item.cabinet.client_id,
                 {
@@ -253,6 +275,7 @@ def build_ad_texts_report(
                 impressions=bucket.get("impressions", 0),
                 conversions=sum(share.conversions for share in shares),
                 cabinets=shares,
+                archived=bool(bucket["archived"]),
             )
         )
     ranked.sort(key=lambda item: (-item.conversions, -item.spend))
@@ -309,15 +332,25 @@ def _load_cabinet(settings: Settings, ref: CabinetRef, date_from: date, date_to:
     if ads:
         try:
             raw_ads, copy_error = api.fetch_ads(list(ads))
-            apply_ad_copies(ads, raw_ads)
-            returned: set[int] = set()
-            for raw in raw_ads:
-                raw_id = raw.get("Id")
-                returned_id = raw_id if isinstance(raw_id, int) else _parse_int(str(raw_id or ""))
-                if returned_id:
-                    returned.add(returned_id)
+            returned = _remember_copies(ads, raw_ads)
+            missing_campaigns = [
+                ad.campaign_id
+                for ad in ads.values()
+                if ad.ad_id not in returned and ad.campaign_id
+            ]
+            if missing_campaigns:
+                try:
+                    archived_ads, archived_error = api.fetch_archived_ads(missing_campaigns)
+                    returned |= _remember_copies(ads, archived_ads)
+                    if archived_error:
+                        copy_error = "; ".join(part for part in (copy_error, archived_error) if part)
+                except Exception as exc:
+                    logger.warning("Архивные тексты кабинета %s: %s", ref.client_name, exc)
+                    copy_error = "; ".join(part for part in (copy_error, str(exc)[:200]) if part)
             for ad in ads.values():
-                if not ad.title and not ad.body and ad.ad_id not in returned:
+                if ad.title or ad.body:
+                    continue
+                if ad.ad_id not in returned:
                     ad.deleted = True
             if copy_error and not any(ad.title or ad.body for ad in ads.values()):
                 text_error = copy_error
@@ -353,6 +386,7 @@ def _job_key(settings: Settings, refs: list[CabinetRef], date_from: date, date_t
         settings.yandex_token,
         date_from.isoformat(),
         date_to.isoformat(),
+        "texts-v2",
         tuple((ref.client_id, ref.goal_ids, ref.attribution_model) for ref in refs),
     )
 
