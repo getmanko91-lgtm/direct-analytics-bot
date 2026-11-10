@@ -801,13 +801,37 @@ code {
   font: inherit;
 }
 
-.keywords-miss-table td:nth-child(1),
-.keywords-miss-table td:nth-child(n + 3) {
+.keywords-miss-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.keywords-miss-table th:nth-child(1) { width: 18%; }
+.keywords-miss-table th:nth-child(2) { width: 11%; }
+.keywords-miss-table th:nth-child(3) { width: 33%; }
+.keywords-miss-table th:nth-child(4) { width: 8%; }
+.keywords-miss-table th:nth-child(5) { width: 10%; }
+.keywords-miss-table th:nth-child(6) { width: 20%; }
+
+.keywords-miss-table th,
+.keywords-miss-table td {
   white-space: nowrap;
+}
+
+.keywords-miss-table th:nth-child(3),
+.keywords-miss-table td:nth-child(3),
+.keywords-miss-table th:nth-child(6),
+.keywords-miss-table td:nth-child(6) {
+  white-space: normal;
 }
 
 .keywords-miss-table .placement-name {
   word-break: break-word;
+}
+
+.keywords-miss-table td.miss-spend {
+  font-weight: 700;
+  color: #ffb3a6;
 }
 
 .keywords-dead-table td,

@@ -99,8 +99,8 @@
       <thead>
         <tr>
           <th>Проект</th>
+          <th>Слито, ₽</th>
           <th>Ключевик</th>
-          <th>Расход в проекте, ₽</th>
           <th>Клики</th>
           <th>CPC, ₽</th>
           <th>Продажи в других проектах</th>
@@ -110,8 +110,8 @@
         {% for row in report.misses %}
         <tr data-project="{{ row.project }}" data-keyword="{{ row.keyword | lower }}">
           <td>{{ row.project }}<div class="muted">{{ row.directologist }}</div></td>
+          <td class="miss-spend">{{ row.spend }}</td>
           <td><code class="placement-name">{{ row.keyword }}</code></td>
-          <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
           <td>{{ row.cpc }}</td>
           <td>{% if row.worked_elsewhere %}есть, {{ row.elsewhere }} конв.{% else %}нигде{% endif %}</td>
