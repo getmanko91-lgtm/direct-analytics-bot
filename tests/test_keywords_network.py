@@ -1,7 +1,12 @@
 from datetime import date
 
-from src.services.keywords_network import format_keywords_csv, format_keywords_telegram, parse_cabinet_keywords
-from src.services.rsya_network import CabinetPlacements, CabinetRef, build_network_report
+from src.services.keywords_network import (
+    format_keywords_csv,
+    format_keywords_telegram,
+    keyword_project_misses,
+    parse_cabinet_keywords,
+)
+from src.services.rsya_network import CabinetPlacements, CabinetRef, PlacementStat, build_network_report
 
 
 def _ref(client_id: int, name: str) -> CabinetRef:
@@ -58,9 +63,32 @@ def test_parse_keywords_keeps_kpi_campaigns_and_merges_case():
     assert stat.conversions == 3
 
 
-def test_keyword_report_finds_phrase_with_zero_conversions_everywhere():
-    from src.services.rsya_network import PlacementStat
+def test_keyword_project_miss_is_one_row_per_project_without_sales():
+    cabinets = [
+        CabinetPlacements(
+            _ref(1, "Япошка"),
+            {
+                "пицца": PlacementStat(spend=700, clicks=10, impressions=100, conversions=0),
+                "роллы": PlacementStat(spend=900, clicks=8, impressions=80, conversions=0),
+            },
+        ),
+        CabinetPlacements(
+            _ref(2, "Гринпарк"),
+            {
+                "пицца": PlacementStat(spend=200, clicks=4, impressions=40, conversions=0),
+                "роллы": PlacementStat(spend=800, clicks=6, impressions=60, conversions=3),
+            },
+        ),
+    ]
+    report = build_network_report(cabinets, date(2026, 10, 1), date(2026, 10, 31), min_spend=600)
+    misses = keyword_project_misses(report, 600)
+    assert [(item.project, item.keyword, item.conversions_elsewhere) for item in misses] == [
+        ("Япошка", "роллы", 3),
+        ("Япошка", "пицца", 0),
+    ]
 
+
+def test_keyword_report_finds_phrase_with_zero_conversions_everywhere():
     cabinets = [
         CabinetPlacements(
             _ref(1, "Япошка"),

@@ -51,6 +51,7 @@ from src.services.keywords_network import (
     format_keywords_csv,
     format_keywords_telegram,
     get_keyword_job,
+    keyword_project_misses,
 )
 from src.services.rsya_network import (
     DEFAULT_GOOD_MIN_CONVERSIONS as DEFAULT_RSYA_GOOD_MIN_CONVERSIONS,
@@ -711,15 +712,30 @@ def keywords_page(
         "report": None,
     }
     if not job.running:
-        context["report"] = _network_report_dict(
-            build_keyword_report(
-                job.cabinets,
-                date_from,
-                date_to,
-                min_spend=min_spend,
-                good_min_conversions=min_conv,
-            )
+        report = build_keyword_report(
+            job.cabinets,
+            date_from,
+            date_to,
+            min_spend=min_spend,
+            good_min_conversions=min_conv,
         )
+        view = _network_report_dict(report)
+        misses = keyword_project_misses(report, min_spend)
+        view["misses"] = [
+            {
+                "keyword": item.keyword,
+                "project": item.project,
+                "directologist": item.directologist,
+                "spend": _fmt_money(item.spend),
+                "clicks": _fmt_int(item.clicks),
+                "cpc": _fmt_cost(item.cpc),
+                "elsewhere": _fmt_conv_count(item.conversions_elsewhere),
+                "worked_elsewhere": item.conversions_elsewhere > 0,
+            }
+            for item in misses
+        ]
+        view["projects"] = sorted({item.project for item in misses})
+        context["report"] = view
     return templates.TemplateResponse(request, "keywords.html", context)
 
 

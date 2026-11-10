@@ -7,7 +7,7 @@
 <div class="page-header">
   <div>
     <h1>Ключевики</h1>
-    <p class="muted">Поиск и РСЯ, все кабинеты за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. Как на странице KPI: только кампании «КОНВЕР», «МК», «ЕПК», «ТМК» и только ключевые фразы, без автотаргетинга и аудиторий. Конверсии — по целям, выбранным у каждого клиента. Расход и конверсии ключевика сложены с поиска и из РСЯ.</p>
+    <p class="muted">За {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}: какая фраза в каком проекте не дала ни одной продажи. Кампании «КОНВЕР», «МК», «ЕПК», «ТМК», цели те же, что на странице KPI.</p>
   </div>
   {% if report %}
   <form method="post" action="/keywords/send">
@@ -72,6 +72,59 @@
 </div>
 {% endif %}
 
+<div class="card placements-card" id="keyword-misses">
+  <div class="budget-pacing-header">
+    <div>
+      <h2 class="chart-title">Фраза не дала продаж в проекте</h2>
+      <p class="muted">Одна строка — одна фраза в одном проекте. За этот период она потратила там от {{ min_spend }} ₽ и не принесла ни одной конверсии. «Нигде» — продаж не было ни в одном проекте. «Есть продажи» — в других проектах фраза работает, минусовать её только здесь.</p>
+    </div>
+  </div>
+  {% if report.misses %}
+  <div class="rsya-all-filters">
+    <label>Проект
+      <select id="missProject">
+        <option value="">Все проекты</option>
+        {% for name in report.projects %}
+        <option value="{{ name }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Поиск фразы
+      <input type="search" id="missSearch" placeholder="суши, роллы…">
+    </label>
+    <span class="muted" id="missCount">{{ report.misses | length }} строк</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table analytics-table placements-table keywords-miss-table">
+      <thead>
+        <tr>
+          <th>Проект</th>
+          <th>Ключевик</th>
+          <th>Расход в проекте, ₽</th>
+          <th>Клики</th>
+          <th>CPC, ₽</th>
+          <th>Продажи в других проектах</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.misses %}
+        <tr data-project="{{ row.project }}" data-keyword="{{ row.keyword | lower }}">
+          <td>{{ row.project }}<div class="muted">{{ row.directologist }}</div></td>
+          <td><code class="placement-name">{{ row.keyword }}</code></td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td>{{ row.cpc }}</td>
+          <td>{% if row.worked_elsewhere %}есть, {{ row.elsewhere }} конв.{% else %}нигде{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">За период нет фраз с расходом от {{ min_spend }} ₽ и нулём конверсий в проекте.</p>
+  {% endif %}
+</div>
+
 <div class="summary-grid">
   <div class="summary-card">
     <span class="summary-label">Расход на ключевики, все кабинеты</span>
@@ -97,56 +150,6 @@
     <span class="summary-label">Удачных ключевиков</span>
     <strong class="summary-value pace-deviation pace-ok">{{ report.good_count }}</strong>
   </div>
-</div>
-
-<div class="card placements-card">
-  <div class="budget-pacing-header">
-    <div>
-      <h2 class="chart-title">Ни одной конверсии ни в одном кабинете</h2>
-      <p class="muted">Суммарный расход по всем кабинетам от {{ min_spend }} ₽ и ни одной конверсии. Рядом с фразой — кабинеты, в которых она крутилась и не дала продаж.</p>
-    </div>
-    {% if report.dead_count %}
-    <span class="pace-badge pace-over">{{ report.total_dead_spend }} ₽</span>
-    {% endif %}
-  </div>
-
-  {% if report.dead %}
-  <div class="table-wrap">
-    <table class="table analytics-table placements-table keywords-dead-table">
-      <thead>
-        <tr>
-          <th>Ключевик</th>
-          <th>Кабинеты без конверсий</th>
-          <th>Расход, ₽</th>
-          <th>Клики</th>
-          <th>CPC, ₽</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in report.dead %}
-        <tr>
-          <td><code class="placement-name">{{ row.placement }}</code></td>
-          <td class="rsya-projects">
-            {% for share in row.cabinets %}
-            <div>{{ share.client_name }} — {{ share.spend }} ₽, {{ share.clicks }} кл.</div>
-            {% endfor %}
-          </td>
-          <td>{{ row.spend }}</td>
-          <td>{{ row.clicks }}</td>
-          <td>{{ row.cpc }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <label class="copy-list-label">Список для минус-фраз (по одному ключевику на строку)
-    <textarea id="placementList" class="placement-list" readonly rows="8">{{ report.placement_names_text }}</textarea>
-  </label>
-  <button type="button" class="btn btn-secondary" onclick="copyPlacements()">Скопировать список</button>
-  <span id="copyStatus" class="muted copy-status"></span>
-  {% else %}
-  <p class="muted">Ключевиков без конверсий с расходом от {{ min_spend }} ₽ за период нет.</p>
-  {% endif %}
 </div>
 
 <div class="card placements-card">
@@ -230,47 +233,6 @@
   </div>
 </div>
 
-<div class="card placements-card">
-  <h2 class="chart-title">Не конвертят в отдельных кабинетах</h2>
-  <p class="muted">В других кабинетах ключевик даёт конверсии, а в этом — расход от {{ min_spend }} ₽ и 0 конверсий. Минусовать точечно, в конкретном кабинете.</p>
-  {% if report.partial %}
-  <div class="table-wrap">
-    <table class="table analytics-table placements-table">
-      <thead>
-        <tr>
-          <th>Ключевик</th>
-          <th>Клиент</th>
-          <th>Директолог</th>
-          <th>Расход, ₽</th>
-          <th>Клики</th>
-          <th>CPC, ₽</th>
-          <th>CPA здесь</th>
-          <th>Конверсий в других кабинетах</th>
-          <th>CPA по всем кабинетам, ₽</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in report.partial %}
-        <tr>
-          <td><code class="placement-name">{{ row.placement }}</code></td>
-          <td>{{ row.client_name }}</td>
-          <td>{{ row.directologist }}</td>
-          <td>{{ row.spend }}</td>
-          <td>{{ row.clicks }}</td>
-          <td>{{ row.cpc }}</td>
-          <td class="cpa-high">нет конверсий</td>
-          <td>{{ row.network_conversions }}</td>
-          <td>{{ row.network_cpa }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="muted">Таких ключевиков нет.</p>
-  {% endif %}
-</div>
-
 <div class="card placements-card" id="all-placements">
   <div class="budget-pacing-header">
     <div>
@@ -343,6 +305,28 @@
 {% endif %}
 
 <script>
+(function () {
+  const project = document.getElementById('missProject');
+  const search = document.getElementById('missSearch');
+  const count = document.getElementById('missCount');
+  if (!project || !search || !count) return;
+  const rows = Array.from(document.querySelectorAll('.keywords-miss-table tbody tr'));
+  function apply() {
+    const chosen = project.value;
+    const query = search.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(function (row) {
+      const show = (!chosen || row.dataset.project === chosen)
+        && (!query || row.dataset.keyword.includes(query));
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    count.textContent = visible + ' из ' + rows.length + ' строк';
+  }
+  project.addEventListener('change', apply);
+  search.addEventListener('input', apply);
+})();
+
 (function () {
   const search = document.getElementById('allSearch');
   const minSpend = document.getElementById('allMinSpend');

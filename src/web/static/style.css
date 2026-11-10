@@ -788,6 +788,7 @@ code {
   color: var(--muted);
 }
 
+.rsya-all-filters select,
 .rsya-all-filters input[type="search"] {
   display: block;
   margin-top: 0.35rem;
@@ -798,6 +799,15 @@ code {
   background: var(--surface2);
   color: var(--text);
   font: inherit;
+}
+
+.keywords-miss-table td:nth-child(1),
+.keywords-miss-table td:nth-child(n + 3) {
+  white-space: nowrap;
+}
+
+.keywords-miss-table .placement-name {
+  word-break: break-word;
 }
 
 .keywords-dead-table td,

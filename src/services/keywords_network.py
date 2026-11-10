@@ -65,6 +65,39 @@ def format_keywords_csv(report: RsyaNetworkReport) -> str:
     return format_all_placements_csv(report, item_header="Ключевик")
 
 
+@dataclass(frozen=True)
+class KeywordMiss:
+    keyword: str
+    project: str
+    directologist: str
+    spend: float
+    clicks: int
+    cpc: float | None
+    conversions_elsewhere: float
+
+
+def keyword_project_misses(report: RsyaNetworkReport, min_spend: float) -> tuple[KeywordMiss, ...]:
+    """Фраза, которая в конкретном проекте за период не дала ни одной конверсии."""
+    misses: list[KeywordMiss] = []
+    for item in report.all_placements:
+        for share in item.cabinets:
+            if share.conversions > 0 or share.spend < min_spend:
+                continue
+            misses.append(
+                KeywordMiss(
+                    keyword=item.placement,
+                    project=share.client_name,
+                    directologist=share.directologist,
+                    spend=share.spend,
+                    clicks=share.clicks,
+                    cpc=share.cpc,
+                    conversions_elsewhere=item.conversions,
+                )
+            )
+    misses.sort(key=lambda row: (row.project, -row.spend))
+    return tuple(misses)
+
+
 def format_keywords_telegram(report: RsyaNetworkReport, *, limit: int = 25, good_limit: int = 10) -> str:
     period = report.date_from.strftime("%d.%m.%Y")
     if report.date_from != report.date_to:
@@ -213,7 +246,9 @@ def build_keyword_report(
 __all__ = [
     "build_keyword_report",
     "cabinet_refs",
+    "KeywordMiss",
     "format_keywords_csv",
+    "keyword_project_misses",
     "format_keywords_telegram",
     "get_keyword_job",
     "parse_cabinet_keywords",
