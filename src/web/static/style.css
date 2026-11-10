@@ -800,23 +800,28 @@ code {
   font: inherit;
 }
 
-.keywords-dead-table td {
+.keywords-dead-table td,
+.keywords-good-table td {
   white-space: normal;
 }
 
-.keywords-dead-table .placement-name {
+.keywords-dead-table .placement-name,
+.keywords-good-table .placement-name {
   word-break: break-word;
 }
 
-.keywords-dead-table td.rsya-projects div {
+.keywords-dead-table td.rsya-projects div,
+.keywords-good-table td.rsya-projects div {
   white-space: nowrap;
 }
 
-.keywords-dead-table td.rsya-projects div + div {
+.keywords-dead-table td.rsya-projects div + div,
+.keywords-good-table td.rsya-projects div + div {
   margin-top: 0.2rem;
 }
 
-.keywords-dead-table td:nth-child(n + 3) {
+.keywords-dead-table td:nth-child(n + 3),
+.keywords-good-table td:nth-child(n + 3) {
   white-space: nowrap;
 }
 

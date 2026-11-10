@@ -153,7 +153,7 @@
   <div class="budget-pacing-header">
     <div>
       <h2 class="chart-title">Удачные ключевики</h2>
-      <p class="muted">По всем кабинетам вместе от {{ min_conv }} конверсий и CPA не выше среднего ({{ report.avg_cpa }}{% if report.avg_cpa != '—' %} ₽{% endif %}). Их не минусовать — можно поднимать ставки.</p>
+      <p class="muted">По всем кабинетам вместе от {{ min_conv }} конверсий и CPA не выше среднего ({{ report.avg_cpa }}{% if report.avg_cpa != '—' %} ₽{% endif %}). Рядом с фразой — кабинеты, в которых она дала продажи. Их не минусовать.</p>
     </div>
     {% if report.good_count %}
     <span class="pace-badge pace-ok">{{ report.good_conversions }} конв. за {{ report.good_spend }} ₽</span>
@@ -161,37 +161,32 @@
   </div>
   {% if report.good %}
   <div class="table-wrap">
-    <table class="table analytics-table placements-table">
+    <table class="table analytics-table placements-table keywords-good-table">
       <thead>
         <tr>
           <th>Ключевик</th>
+          <th>Кабинеты</th>
           <th>Конверсии</th>
           <th>CPA, ₽</th>
           <th>Расход, ₽</th>
           <th>Клики</th>
           <th>CPC, ₽</th>
-          <th>Кабинеты</th>
         </tr>
       </thead>
       <tbody>
         {% for row in report.good %}
         <tr>
           <td><code class="placement-name">{{ row.placement }}</code></td>
+          <td class="rsya-projects">
+            {% for share in row.cabinets %}
+            <div>{{ share.client_name }} — {{ share.conversions }} конв.{% if share.cpa != '—' %}, CPA {{ share.cpa }} ₽{% else %}, {{ share.spend }} ₽{% endif %}</div>
+            {% endfor %}
+          </td>
           <td>{{ row.conversions }}</td>
           <td class="cpa-low">{{ row.cpa }}</td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
           <td>{{ row.cpc }}</td>
-          <td>
-            <details class="rsya-cabinets">
-              <summary>{{ row.cabinets_count }}: {{ row.cabinets[0].client_name }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
-              <ul>
-                {% for share in row.cabinets %}
-                <li>{{ share.client_name }} ({{ share.directologist }}) — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽, расход {{ share.spend }} ₽, CPC {{ share.cpc }} ₽</li>
-                {% endfor %}
-              </ul>
-            </details>
-          </td>
         </tr>
         {% endfor %}
       </tbody>
