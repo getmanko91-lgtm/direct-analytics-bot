@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -24,6 +25,14 @@ STATUS_LABELS = {
     "blocked": "заблокирован",
     "deleted": "удалён",
 }
+CAMPAIGN_KINDS = ("zk", "join", "senler", "other")
+CAMPAIGN_KIND_LABELS = {
+    "zk": "ЗК / закрытый клуб",
+    "join": "Вступления",
+    "senler": "Универс",
+    "other": "Другие",
+}
+_COPY_PREFIX = re.compile(r"^(?:копия(?:_\d+)?\s+)+", re.IGNORECASE)
 
 
 @dataclass
@@ -100,6 +109,47 @@ class VkJob:
 
 _JOBS: dict[tuple, VkJob] = {}
 _JOBS_LOCK = threading.Lock()
+
+
+def campaign_kind(name: str) -> str:
+    """ЗК и вступления отдают результат в кабинете VK. Универс — только в Senler."""
+    text = " ".join(str(name or "").casefold().replace("ё", "е").split())
+    text = _COPY_PREFIX.sub("", text)
+    if re.match(r"^(?:zk|зк)(?:\s|/|$)", text):
+        return "zk"
+    if text.startswith("вступ"):
+        return "join"
+    if text.startswith("универс"):
+        return "senler"
+    return "other"
+
+
+def campaign_type_totals(campaigns: list[tuple]) -> dict[str, dict]:
+    totals = {
+        kind: {"campaigns": 0, "goals": 0.0, "spend": 0.0, "clicks": 0}
+        for kind in CAMPAIGN_KINDS
+    }
+    for _cabinet, plan in campaigns:
+        kind = campaign_kind(plan.name)
+        bucket = totals[kind]
+        bucket["campaigns"] += 1
+        bucket["spend"] += plan.spend
+        bucket["clicks"] += plan.clicks
+        if kind != "senler":
+            bucket["goals"] += plan.goals
+    return totals
+
+
+def cabinet_type_goals(cabinet: VkCabinet) -> dict[str, float] | None:
+    if not cabinet.campaigns:
+        return None
+    goals = {"zk": 0.0, "join": 0.0, "other": 0.0}
+    for plan in cabinet.campaigns:
+        kind = campaign_kind(plan.name)
+        if kind == "senler":
+            continue
+        goals[kind] += plan.goals
+    return goals
 
 
 def goals_of(base: dict) -> float:

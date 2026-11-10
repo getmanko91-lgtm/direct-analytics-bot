@@ -13,7 +13,7 @@
       {% elif section == 'clients' %}Клиенты
       {% else %}Сводка{% endif %}
     </h1>
-    <p class="muted">Все кабинеты VK Рекламы за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. Результат — цели VK, расход с НДС 22%. Одинаковый текст в разных кабинетах сложен.</p>
+    <p class="muted">Все кабинеты VK Рекламы за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. ЗК и вступления — колонка «Результат» в кабинете. Универс в кабинете не считается: эти результаты только в Senler. Расход с НДС 22%.</p>
   </div>
 </div>
 
@@ -64,8 +64,23 @@
     <span class="muted">из {{ report.clients_total }}</span>
   </div>
   <div class="summary-card">
-    <span class="summary-label">Результаты VK</span>
+    <span class="summary-label">Результаты VK, весь кабинет</span>
     <strong class="summary-value">{{ report.total_goals }}</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">ЗК, закрытый клуб</span>
+    <strong class="summary-value">{{ report.types[0].goals }}</strong>
+    <span class="muted">{{ report.types[0].spend }} ₽, CPA {{ report.types[0].cpa }}</span>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Вступления</span>
+    <strong class="summary-value">{{ report.types[1].goals }}</strong>
+    <span class="muted">{{ report.types[1].spend }} ₽, CPA {{ report.types[1].cpa }}</span>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Универс</span>
+    <strong class="summary-value">в Senler</strong>
+    <span class="muted">в кабинете VK нет, расход {{ report.types[2].spend }} ₽</span>
   </div>
   <div class="summary-card">
     <span class="summary-label">Расход с НДС</span>
@@ -79,6 +94,34 @@
 </div>
 
 <div class="card placements-card">
+  {% if section == 'summary' or section == 'campaigns' %}
+  <h2 class="chart-title">Результаты по типу кампании</h2>
+  <p class="muted">Имя кампании: «ЗК / …» и «ZK / …» — закрытый клуб, «Вступ… / …» — вступление в группу, «Универс…» — Senler. Приставка «копия» тип не меняет. Заблокированный кабинет в эту таблицу не попадает: VK не отдаёт названия кампаний.</p>
+  <div class="table-wrap">
+    <table class="table analytics-table">
+      <thead>
+        <tr>
+          <th>Тип</th>
+          <th>Кампаний</th>
+          <th>Результаты</th>
+          <th>Расход, ₽</th>
+          <th>CPA, ₽</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.types %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td>{{ row.campaigns }}</td>
+          <td>{{ row.goals }}</td>
+          <td>{{ row.spend }}</td>
+          <td class="{{ row.cpa_class }}">{{ row.cpa }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
   {% if section == 'summary' or section == 'clients' %}
   <div class="rsya-all-filters">
     <label>Поиск кабинета
@@ -91,7 +134,9 @@
       <thead>
         <tr>
           <th>Кабинет</th>
-          <th>Результаты</th>
+          <th>ЗК</th>
+          <th>Вступления</th>
+          <th>Всего в кабинете</th>
           <th>CPA, ₽</th>
           <th>Расход, ₽</th>
           <th>Клики</th>
@@ -105,6 +150,8 @@
         {% for row in report.cabinets %}
         <tr data-text="{{ row.search }}" data-empty="{{ '1' if row.goals_value <= 0 and row.spend == '0,00' else '0' }}">
           <td><div class="ad-text-title">{{ row.name }}</div>{% if row.username %}<div class="muted">{{ row.username }}</div>{% endif %}</td>
+          <td>{{ row.zk }}</td>
+          <td>{{ row.join }}</td>
           <td>{{ row.goals }}</td>
           <td class="{{ row.cpa_class }}">{{ row.cpa }}</td>
           <td>{{ row.spend }}</td>
@@ -115,7 +162,7 @@
           <td>{{ row.status }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="9" class="muted">Нет кабинетов</td></tr>
+        <tr><td colspan="11" class="muted">Нет кабинетов</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -125,6 +172,15 @@
     <label>Поиск
       <input type="search" id="vkSearch" placeholder="кампания или кабинет">
     </label>
+    <label>Тип
+      <select id="vkKind">
+        <option value="">Все</option>
+        <option value="zk">ЗК</option>
+        <option value="join">Вступления</option>
+        <option value="senler">Универс</option>
+        <option value="other">Другие</option>
+      </select>
+    </label>
     <span class="muted" id="vkCount">{{ report.campaigns|length }} кампаний</span>
   </div>
   <div class="table-wrap">
@@ -132,6 +188,7 @@
       <thead>
         <tr>
           <th>Кампания</th>
+          <th>Тип</th>
           <th>Результаты</th>
           <th>CPA, ₽</th>
           <th>Расход, ₽</th>
@@ -142,8 +199,9 @@
       </thead>
       <tbody>
         {% for row in report.campaigns %}
-        <tr data-text="{{ row.search }}">
+        <tr data-text="{{ row.search }}" data-kind="{{ row.kind }}">
           <td class="wrap">{{ row.name }}</td>
+          <td>{{ row.kind_label }}</td>
           <td>{{ row.goals }}</td>
           <td class="{{ row.cpa_class }}">{{ row.cpa }}</td>
           <td>{{ row.spend }}</td>
@@ -152,7 +210,7 @@
           <td>{{ row.objective }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="muted">Нет кампаний с расходом за период</td></tr>
+        <tr><td colspan="8" class="muted">Нет кампаний с расходом за период</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -244,15 +302,18 @@
   const search = document.getElementById('vkSearch');
   const count = document.getElementById('vkCount');
   const deleted = document.getElementById('vkDeleted');
+  const kind = document.getElementById('vkKind');
   if (!search || !count) return;
   const rows = Array.from(document.querySelectorAll('.vk-table tbody tr[data-text]'));
   const noun = count.textContent.replace(/^\d+\s*/, '');
   function apply() {
     const query = search.value.trim().toLowerCase();
+    const selected = kind ? kind.value : '';
     const hideEmpty = {{ 'true' if section == 'summary' else 'false' }};
     let visible = 0;
     rows.forEach(function (row) {
       const show = (!query || row.dataset.text.includes(query))
+        && (!selected || row.dataset.kind === selected)
         && (!hideEmpty || query || row.dataset.empty !== '1')
         && (!deleted || deleted.checked || row.dataset.deleted !== '1');
       row.hidden = !show;
@@ -262,6 +323,7 @@
   }
   search.addEventListener('input', apply);
   if (deleted) deleted.addEventListener('change', apply);
+  if (kind) kind.addEventListener('change', apply);
   apply();
 })();
 </script>

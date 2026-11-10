@@ -1,4 +1,51 @@
-from src.services.vk_analytics import VkAudience, VkCabinet, VkText, banner_copy, build_vk_report, goals_of
+from src.services.vk_analytics import (
+    VkAudience,
+    VkCabinet,
+    VkCampaign,
+    VkText,
+    banner_copy,
+    build_vk_report,
+    campaign_kind,
+    campaign_type_totals,
+    goals_of,
+)
+
+
+def test_campaign_kind_reads_the_name_prefix():
+    assert campaign_kind("ЗК / Ящики / мин") == "zk"
+    assert campaign_kind("ZK / club") == "zk"
+    assert campaign_kind("копия ЗК / Ящики") == "zk"
+    assert campaign_kind("Копия_1 Копия ЗК / тест") == "zk"
+    assert campaign_kind("ВСТУП / Мин") == "join"
+    assert campaign_kind("Вступления / Минималка") == "join"
+    assert campaign_kind("копия Вступления / Мин") == "join"
+    assert campaign_kind("УНИВЕРС / база") == "senler"
+    assert campaign_kind("УНИВЕРС. КИНО") == "senler"
+    assert campaign_kind("ПРОДВ / КОНКУРС") == "other"
+
+
+def test_univers_is_not_counted_as_vk_result():
+    cabinet = VkCabinet(
+        client_id=1,
+        name="Иркутск",
+        username="",
+        status="active",
+        balance=0,
+        spend=230,
+        shows=20,
+        clicks=6,
+        goals=16,
+        campaigns=[
+            VkCampaign(1, "ЗК / гео", "", "active", 100, 10, 2, 5),
+            VkCampaign(2, "Вступления / мин", "", "active", 50, 5, 1, 2),
+            VkCampaign(3, "УНИВЕРС / база", "", "active", 80, 8, 3, 9),
+        ],
+    )
+    totals = campaign_type_totals([(cabinet, plan) for plan in cabinet.campaigns])
+    assert totals["zk"]["goals"] == 5
+    assert totals["join"]["goals"] == 2
+    assert totals["senler"]["goals"] == 0
+    assert totals["senler"]["spend"] == 80
 
 
 def test_goals_prefer_vk_result():

@@ -6,7 +6,18 @@ from fastapi.responses import HTMLResponse
 from src.config import Settings
 from src.db.models import User
 from src.services.cpa_style import cpa_highlight_class
-from src.services.vk_analytics import VkCabinet, VkJob, build_vk_report, get_vk_job, status_label
+from src.services.vk_analytics import (
+    CAMPAIGN_KIND_LABELS,
+    CAMPAIGN_KINDS,
+    VkCabinet,
+    VkJob,
+    build_vk_report,
+    cabinet_type_goals,
+    campaign_kind,
+    campaign_type_totals,
+    get_vk_job,
+    status_label,
+)
 from src.web.dependencies import get_current_user
 from src.web.routes import RSYA_PRESETS, _fmt_int, _fmt_money, _rsya_period, get_settings_dep, templates
 
@@ -96,6 +107,7 @@ def _present(job: VkJob) -> dict:
         if best is None
         else {"name": best.name, "cpa": _fmt_money(best.spend / best.goals), "goals": _fmt_goals(best.goals)},
         "errors": [(item.name, item.error) for item in report["cabinets"] if item.error],
+        "types": _type_rows(campaign_type_totals(report["campaigns"])),
         "cabinets": [_cabinet_row(item) for item in report["cabinets"]],
         "campaigns": [_campaign_row(cabinet, plan) for cabinet, plan in report["campaigns"]],
         "texts": [_text_row(item) for item in report["texts"]],
@@ -103,14 +115,37 @@ def _present(job: VkJob) -> dict:
     }
 
 
+def _type_rows(totals: dict[str, dict]) -> list[dict]:
+    rows = []
+    for kind in CAMPAIGN_KINDS:
+        item = totals[kind]
+        senler = kind == "senler"
+        cpa = None if senler else _cpa(item["spend"], item["goals"])
+        rows.append(
+            {
+                "key": kind,
+                "label": CAMPAIGN_KIND_LABELS[kind],
+                "campaigns": _fmt_int(item["campaigns"]),
+                "goals": "в Senler" if senler else _fmt_goals(item["goals"]),
+                "spend": _fmt_money(item["spend"]),
+                "cpa": "—" if cpa is None else _fmt_money(cpa),
+                "cpa_class": cpa_highlight_class(cpa),
+            }
+        )
+    return rows
+
+
 def _cabinet_row(item: VkCabinet) -> dict:
     cpa = _cpa(item.spend, item.goals)
     ctr = item.clicks / item.shows * 100 if item.shows else None
+    split = cabinet_type_goals(item)
     return {
         "name": item.name,
         "username": item.username,
         "status": status_label(item.status),
         "balance": _fmt_money(item.balance),
+        "zk": "—" if split is None else _fmt_goals(split["zk"]),
+        "join": "—" if split is None else _fmt_goals(split["join"]),
         "goals": _fmt_goals(item.goals),
         "goals_value": item.goals,
         "spend": _fmt_money(item.spend),
@@ -124,14 +159,18 @@ def _cabinet_row(item: VkCabinet) -> dict:
 
 
 def _campaign_row(cabinet: VkCabinet, plan) -> dict:
-    cpa = _cpa(plan.spend, plan.goals)
+    kind = campaign_kind(plan.name)
+    senler = kind == "senler"
+    cpa = None if senler else _cpa(plan.spend, plan.goals)
     return {
         "name": plan.name,
         "client": cabinet.name,
+        "kind": kind,
+        "kind_label": CAMPAIGN_KIND_LABELS[kind],
         "objective": plan.objective or "—",
         "status": status_label(plan.status),
-        "goals": _fmt_goals(plan.goals),
-        "goals_value": plan.goals,
+        "goals": "в Senler" if senler else _fmt_goals(plan.goals),
+        "goals_value": 0 if senler else plan.goals,
         "spend": _fmt_money(plan.spend),
         "clicks": _fmt_int(plan.clicks),
         "cpa": "—" if cpa is None else _fmt_money(cpa),
