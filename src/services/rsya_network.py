@@ -418,12 +418,12 @@ def _fmt_conv(value: float) -> str:
     return f"{value:g}".replace(".", ",")
 
 
-def format_all_placements_csv(report: RsyaNetworkReport) -> str:
+def format_all_placements_csv(report: RsyaNetworkReport, *, item_header: str = "Площадка") -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=";")
     writer.writerow(
         [
-            "Площадка",
+            item_header,
             "Расход, ₽",
             "Клики",
             "CPC, ₽",

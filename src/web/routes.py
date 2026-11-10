@@ -41,6 +41,12 @@ from src.services.message_delivery import (
     send_telegram_test,
 )
 from src.services.report_runner import run_all_reports, run_client_report
+from src.services.keywords_network import (
+    build_keyword_report,
+    format_keywords_csv,
+    format_keywords_telegram,
+    get_keyword_job,
+)
 from src.services.rsya_network import (
     DEFAULT_GOOD_MIN_CONVERSIONS as DEFAULT_RSYA_GOOD_MIN_CONVERSIONS,
     DEFAULT_MIN_SPEND as DEFAULT_RSYA_MIN_SPEND,
@@ -499,6 +505,11 @@ def rsya_network_page(
         min_spend=min_spend,
         good_min_conversions=min_conv,
     )
+    context["report"] = _network_report_dict(report)
+    return templates.TemplateResponse(request, "rsya.html", context)
+
+
+def _network_report_dict(report) -> dict:
     share = report.dead_share_percent
 
     def _placement_row(item) -> dict:
@@ -525,7 +536,7 @@ def rsya_network_page(
             ],
         }
 
-    context["report"] = {
+    return {
         "total_rsya_spend": _fmt_money(report.total_rsya_spend),
         "total_dead_spend": _fmt_money(report.total_dead_spend),
         "dead_share": f"{share:.0f}%" if share is not None else "—",
@@ -595,7 +606,6 @@ def rsya_network_page(
         ],
         "placement_names_text": "\n".join(item.placement for item in report.dead),
     }
-    return templates.TemplateResponse(request, "rsya.html", context)
 
 
 @router.get("/rsya/all.csv")
@@ -663,6 +673,119 @@ async def rsya_network_send(
         return RedirectResponse(redirect_url("/rsya", message=f"Отправлено в {target}", **query), status_code=303)
     except (ReportDeliveryError, TelegramError, MaxError, Exception) as exc:
         return RedirectResponse(redirect_url("/rsya", error=str(exc)[:400], **query), status_code=303)
+
+
+@router.get("/keywords", response_class=HTMLResponse)
+def keywords_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    params = request.query_params
+    date_from, date_to, preset = _rsya_period(params)
+    min_spend = _rsya_min_spend(params.get("min_spend"))
+    min_conv = _rsya_min_conversions(params.get("min_conv"))
+    refs, without_goals = cabinet_refs(db)
+    job = get_keyword_job(settings, refs, date_from, date_to, force=params.get("refresh") == "1")
+    context: dict = {
+        "user": user,
+        "date_from": date_from,
+        "date_to": date_to,
+        "preset": preset,
+        "presets": RSYA_PRESETS,
+        "min_spend": f"{min_spend:g}",
+        "min_conv": f"{min_conv:g}",
+        "query": _rsya_query(date_from, date_to, preset, min_spend, min_conv),
+        "without_goals": without_goals,
+        "running": job.running,
+        "progress_done": job.done,
+        "progress_total": job.total,
+        "message": params.get("message"),
+        "error": params.get("error"),
+        "report": None,
+    }
+    if not job.running:
+        context["report"] = _network_report_dict(
+            build_keyword_report(
+                job.cabinets,
+                date_from,
+                date_to,
+                min_spend=min_spend,
+                good_min_conversions=min_conv,
+            )
+        )
+    return templates.TemplateResponse(request, "keywords.html", context)
+
+
+@router.get("/keywords/all.csv")
+def keywords_csv(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    params = request.query_params
+    date_from, date_to, preset = _rsya_period(params)
+    min_spend = _rsya_min_spend(params.get("min_spend"))
+    min_conv = _rsya_min_conversions(params.get("min_conv"))
+    refs, _ = cabinet_refs(db)
+    job = get_keyword_job(settings, refs, date_from, date_to)
+    if job.running:
+        query = _rsya_query(date_from, date_to, preset, min_spend, min_conv)
+        return RedirectResponse(
+            redirect_url("/keywords", error="Данные ещё собираются — скачайте после загрузки", **query),
+            status_code=303,
+        )
+    report = build_keyword_report(
+        job.cabinets,
+        date_from,
+        date_to,
+        min_spend=min_spend,
+        good_min_conversions=min_conv,
+    )
+    filename = f"keywords_{date_from.isoformat()}_{date_to.isoformat()}.csv"
+    return Response(
+        content=format_keywords_csv(report).encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/keywords/send")
+async def keywords_send(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    form = await request.form()
+    date_from, date_to, preset = _rsya_period(form)
+    min_spend = _rsya_min_spend(form.get("min_spend"))
+    min_conv = _rsya_min_conversions(form.get("min_conv"))
+    query = _rsya_query(date_from, date_to, preset, min_spend, min_conv)
+    refs, _ = cabinet_refs(db)
+    job = get_keyword_job(settings, refs, date_from, date_to)
+    if job.running:
+        return RedirectResponse(
+            redirect_url("/keywords", error="Данные ещё собираются — отправьте после загрузки", **query),
+            status_code=303,
+        )
+    report = build_keyword_report(
+        job.cabinets,
+        date_from,
+        date_to,
+        min_spend=min_spend,
+        good_min_conversions=min_conv,
+    )
+    try:
+        target = deliver_telegram_message(db, settings, format_keywords_telegram(report))
+        return RedirectResponse(
+            redirect_url("/keywords", message=f"Отправлено в {target}", **query),
+            status_code=303,
+        )
+    except (ReportDeliveryError, TelegramError, MaxError, Exception) as exc:
+        return RedirectResponse(redirect_url("/keywords", error=str(exc)[:400], **query), status_code=303)
 
 
 def _client_reports_period(request: Request) -> tuple[date, date]:

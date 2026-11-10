@@ -427,6 +427,58 @@ class YandexDirectClient:
                     _merge_conversion_columns(merged[key], row, list(chunk))
         return list(merged.values())
 
+    def fetch_keyword_report(
+        self,
+        date_from: date,
+        date_to: date,
+        goal_ids: list[int],
+        attribution_model: str,
+    ) -> list[dict[str, str]]:
+        """Ключевые фразы на поиске и в РСЯ. Без автотаргетинга и аудиторий."""
+        field_names = [
+            "CampaignName",
+            "CriterionId",
+            "Criterion",
+            "Cost",
+            "Clicks",
+            "Impressions",
+            "Conversions",
+            "CostPerConversion",
+        ]
+        filters = [{"Field": "CriterionType", "Operator": "EQUALS", "Values": ["KEYWORD"]}]
+
+        if not goal_ids:
+            return self._fetch_report_ex(
+                date_from,
+                date_to,
+                [],
+                attribution_model,
+                report_type="CRITERIA_PERFORMANCE_REPORT",
+                field_names=field_names,
+                filters=filters,
+                report_name_prefix="Keywords",
+            )
+
+        merged: dict[str, dict[str, str]] = {}
+        for chunk in _chunked(goal_ids, MAX_GOALS_PER_REQUEST):
+            rows = self._fetch_report_ex(
+                date_from,
+                date_to,
+                list(chunk),
+                attribution_model,
+                report_type="CRITERIA_PERFORMANCE_REPORT",
+                field_names=field_names,
+                filters=filters,
+                report_name_prefix="Keywords",
+            )
+            for row in rows:
+                key = row.get("CriterionId", "").strip() or row.get("Criterion", "").strip()
+                if key not in merged:
+                    merged[key] = dict(row)
+                else:
+                    _merge_conversion_columns(merged[key], row, list(chunk))
+        return list(merged.values())
+
     def _fetch_report(
         self,
         date_from: date,
