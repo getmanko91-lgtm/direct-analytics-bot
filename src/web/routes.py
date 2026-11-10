@@ -41,6 +41,13 @@ from src.services.message_delivery import (
     send_telegram_test,
 )
 from src.services.report_runner import run_all_reports, run_client_report
+from src.services.rsya_network import (
+    DEFAULT_MIN_SPEND as DEFAULT_RSYA_MIN_SPEND,
+    build_network_report,
+    cabinet_refs,
+    format_network_telegram,
+    get_network_job,
+)
 from src.max_notifier import MaxError
 from src.telegram_notifier import TelegramError
 from src.web.dependencies import TEMPLATES_DIR, get_app_settings, get_current_user
@@ -383,6 +390,171 @@ async def kpi_save_manual(
     if date_to:
         query["date_to"] = str(date_to)
     return RedirectResponse(redirect_url("/kpi", **query), status_code=303)
+
+
+RSYA_PRESETS = {
+    "30d": "30 дней",
+    "prev_month": "Прошлый месяц",
+    "90d": "3 месяца",
+    "180d": "6 месяцев",
+}
+
+
+def _rsya_period(params) -> tuple[date, date, str]:
+    yesterday = date.today() - timedelta(days=1)
+    preset = (params.get("period") or "").strip()
+    custom_from = params.get("date_from")
+    custom_to = params.get("date_to")
+    if not preset and custom_from and custom_to:
+        date_from = _parse_date(custom_from, yesterday)
+        date_to = _parse_date(custom_to, yesterday)
+        if date_to < date_from:
+            date_from, date_to = date_to, date_from
+        return date_from, min(date_to, yesterday), ""
+    if preset == "prev_month":
+        first_this_month = date.today().replace(day=1)
+        last_prev = first_this_month - timedelta(days=1)
+        return last_prev.replace(day=1), last_prev, preset
+    days = {"90d": 90, "180d": 180}.get(preset, 30)
+    preset = preset if preset in RSYA_PRESETS else "30d"
+    return yesterday - timedelta(days=days - 1), yesterday, preset
+
+
+def _rsya_min_spend(value: str | None) -> float:
+    parsed = _parse_optional_float(value)
+    return DEFAULT_RSYA_MIN_SPEND if parsed is None else parsed
+
+
+def _rsya_query(date_from: date, date_to: date, preset: str, min_spend: float) -> dict[str, str]:
+    query = {"min_spend": f"{min_spend:g}"}
+    if preset:
+        query["period"] = preset
+    else:
+        query["date_from"] = date_from.isoformat()
+        query["date_to"] = date_to.isoformat()
+    return query
+
+
+def _fmt_conv_count(value: float) -> str:
+    if value == int(value):
+        return str(int(value))
+    return f"{value:.2f}".replace(".", ",")
+
+
+@router.get("/rsya", response_class=HTMLResponse)
+def rsya_network_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    params = request.query_params
+    date_from, date_to, preset = _rsya_period(params)
+    min_spend = _rsya_min_spend(params.get("min_spend"))
+    refs, without_goals = cabinet_refs(db)
+    job = get_network_job(settings, refs, date_from, date_to, force=params.get("refresh") == "1")
+
+    context: dict = {
+        "user": user,
+        "date_from": date_from,
+        "date_to": date_to,
+        "preset": preset,
+        "presets": RSYA_PRESETS,
+        "min_spend": f"{min_spend:g}",
+        "query": _rsya_query(date_from, date_to, preset, min_spend),
+        "without_goals": without_goals,
+        "running": job.running,
+        "progress_done": job.done,
+        "progress_total": job.total,
+        "message": params.get("message"),
+        "error": params.get("error"),
+        "report": None,
+    }
+    if job.running:
+        return templates.TemplateResponse(request, "rsya.html", context)
+
+    report = build_network_report(job.cabinets, date_from, date_to, min_spend=min_spend)
+    share = report.dead_share_percent
+    context["report"] = {
+        "total_rsya_spend": _fmt_money(report.total_rsya_spend),
+        "total_dead_spend": _fmt_money(report.total_dead_spend),
+        "dead_share": f"{share:.0f}%" if share is not None else "—",
+        "dead_count": len(report.dead),
+        "cabinets_ok": len(report.cabinets),
+        "cabinets_total": report.cabinets_total,
+        "errors": report.errors,
+        "dead": [
+            {
+                "placement": item.placement,
+                "spend": _fmt_money(item.spend),
+                "clicks": _fmt_int(item.clicks),
+                "impressions": _fmt_int(item.impressions),
+                "cabinets_count": len(item.cabinets),
+                "cabinets": [
+                    {
+                        "client_name": share.client_name,
+                        "directologist": share.directologist,
+                        "spend": _fmt_money(share.spend),
+                        "clicks": _fmt_int(share.clicks),
+                    }
+                    for share in item.cabinets
+                ],
+            }
+            for item in report.dead
+        ],
+        "partial": [
+            {
+                "placement": item.placement,
+                "client_name": item.cabinet.client_name,
+                "directologist": item.cabinet.directologist,
+                "spend": _fmt_money(item.cabinet.spend),
+                "clicks": _fmt_int(item.cabinet.clicks),
+                "network_conversions": _fmt_conv_count(item.network_conversions),
+            }
+            for item in report.partial
+        ],
+        "cabinets": [
+            {
+                "client_name": row.client_name,
+                "directologist": row.directologist,
+                "rsya_spend": _fmt_money(row.rsya_spend),
+                "wasted_spend": _fmt_money(row.wasted_spend),
+                "wasted_count": row.wasted_count,
+                "wasted_share": (
+                    f"{row.wasted_spend / row.rsya_spend * 100:.0f}%" if row.rsya_spend > 0 else "—"
+                ),
+            }
+            for row in report.cabinets
+        ],
+        "placement_names_text": "\n".join(item.placement for item in report.dead),
+    }
+    return templates.TemplateResponse(request, "rsya.html", context)
+
+
+@router.post("/rsya/send")
+async def rsya_network_send(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    form = await request.form()
+    date_from, date_to, preset = _rsya_period(form)
+    min_spend = _rsya_min_spend(form.get("min_spend"))
+    query = _rsya_query(date_from, date_to, preset, min_spend)
+    refs, _ = cabinet_refs(db)
+    job = get_network_job(settings, refs, date_from, date_to)
+    if job.running:
+        return RedirectResponse(
+            redirect_url("/rsya", error="Данные ещё собираются — отправьте после загрузки", **query),
+            status_code=303,
+        )
+    report = build_network_report(job.cabinets, date_from, date_to, min_spend=min_spend)
+    try:
+        target = deliver_telegram_message(db, settings, format_network_telegram(report))
+        return RedirectResponse(redirect_url("/rsya", message=f"Отправлено в {target}", **query), status_code=303)
+    except (ReportDeliveryError, TelegramError, MaxError, Exception) as exc:
+        return RedirectResponse(redirect_url("/rsya", error=str(exc)[:400], **query), status_code=303)
 
 
 def _client_reports_period(request: Request) -> tuple[date, date]:

@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Площадки РСЯ{% endblock %}
+{% block head %}
+{% if running %}<meta http-equiv="refresh" content="5">{% endif %}
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Площадки РСЯ</h1>
+    <p class="muted">Все кабинеты за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. Конверсии — по целям, выбранным у каждого клиента, в его модели атрибуции.</p>
+  </div>
+  {% if report %}
+  <form method="post" action="/rsya/send">
+    {% for key, value in query.items() %}
+    <input type="hidden" name="{{ key }}" value="{{ value }}">
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Отправить в Telegram</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card filters-card">
+  <form method="get" class="filters-form">
+    <label>Дата с
+      <input type="date" name="date_from" value="{{ date_from.isoformat() }}" required>
+    </label>
+    <label>Дата по
+      <input type="date" name="date_to" value="{{ date_to.isoformat() }}" required>
+    </label>
+    <label>Порог расхода, ₽
+      <input type="number" name="min_spend" value="{{ min_spend }}" min="0" step="50">
+    </label>
+    <button type="submit" class="btn btn-primary">Показать</button>
+  </form>
+  <div class="quick-filters">
+    <span class="muted">Период:</span>
+    {% for key, label in presets.items() %}
+    <a href="/rsya?period={{ key }}&min_spend={{ min_spend }}" class="btn btn-sm {% if preset == key %}btn-primary{% else %}btn-secondary{% endif %}">{{ label }}</a>
+    {% endfor %}
+    {% if report %}
+    <a href="/rsya?{{ query | urlencode }}&refresh=1" class="btn btn-secondary btn-sm">Обновить из Директа</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if without_goals %}
+<div class="alert alert-warning">Не учтены — не выбраны цели: {{ without_goals | join(', ') }}.</div>
+{% endif %}
+
+{% if running %}
+<div class="card">
+  <h2 class="chart-title">Собираю отчёты из Директа…</h2>
+  <p>Готово кабинетов: {{ progress_done }} из {{ progress_total }}. Страница обновится сама.</p>
+  <p class="muted">За несколько месяцев Директ готовит отчёты в очереди — это может занять пару минут. Результат хранится 6 часов.</p>
+</div>
+{% elif report %}
+
+{% if report.errors %}
+<div class="alert alert-warning">
+  Не загрузились кабинеты ({{ report.errors | length }}):
+  {% for name, err in report.errors %}<br><strong>{{ name }}</strong> — {{ err }}{% endfor %}
+</div>
+{% endif %}
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <span class="summary-label">Расход в РСЯ, все кабинеты</span>
+    <strong class="summary-value">{{ report.total_rsya_spend }} ₽</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Слито на площадки без конверсий</span>
+    <strong class="summary-value pace-deviation pace-over">{{ report.total_dead_spend }} ₽</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Доля слива в расходе РСЯ</span>
+    <strong class="summary-value">{{ report.dead_share }}</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Площадок-сливов</span>
+    <strong class="summary-value">{{ report.dead_count }}</strong>
+  </div>
+</div>
+
+<div class="card placements-card">
+  <div class="budget-pacing-header">
+    <div>
+      <h2 class="chart-title">Ни одной конверсии ни в одном кабинете</h2>
+      <p class="muted">Суммарный расход по всем кабинетам от {{ min_spend }} ₽, конверсий 0. Кандидаты в общий список исключений.</p>
+    </div>
+    {% if report.dead_count %}
+    <span class="pace-badge pace-over">{{ report.total_dead_spend }} ₽</span>
+    {% endif %}
+  </div>
+
+  {% if report.dead %}
+  <div class="table-wrap">
+    <table class="table analytics-table placements-table">
+      <thead>
+        <tr>
+          <th>Площадка</th>
+          <th>Расход, ₽</th>
+          <th>Клики</th>
+          <th>Показы</th>
+          <th>Кабинеты</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.dead %}
+        <tr>
+          <td><code class="placement-name">{{ row.placement }}</code></td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td>{{ row.impressions }}</td>
+          <td>
+            <details class="rsya-cabinets">
+              <summary>{{ row.cabinets_count }}: {{ row.cabinets[0].client_name }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
+              <ul>
+                {% for share in row.cabinets %}
+                <li>{{ share.client_name }} ({{ share.directologist }}) — {{ share.spend }} ₽, {{ share.clicks }} кл.</li>
+                {% endfor %}
+              </ul>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <label class="copy-list-label">Список для исключений (по одной площадке на строку)
+    <textarea id="placementList" class="placement-list" readonly rows="8">{{ report.placement_names_text }}</textarea>
+  </label>
+  <button type="button" class="btn btn-secondary" onclick="copyPlacements()">Скопировать список</button>
+  <span id="copyStatus" class="muted copy-status"></span>
+  {% else %}
+  <p class="muted">Площадок без конверсий с расходом от {{ min_spend }} ₽ за период нет.</p>
+  {% endif %}
+</div>
+
+<div class="card placements-card">
+  <h2 class="chart-title">По кабинетам</h2>
+  <p class="muted">Сколько каждый кабинет потратил на площадки из списка выше.</p>
+  <div class="table-wrap">
+    <table class="table analytics-table">
+      <thead>
+        <tr>
+          <th>Клиент</th>
+          <th>Директолог</th>
+          <th>Расход в РСЯ, ₽</th>
+          <th>Слито, ₽</th>
+          <th>Доля</th>
+          <th>Площадок</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.cabinets %}
+        <tr>
+          <td>{{ row.client_name }}</td>
+          <td>{{ row.directologist }}</td>
+          <td>{{ row.rsya_spend }}</td>
+          <td>{{ row.wasted_spend }}</td>
+          <td>{{ row.wasted_share }}</td>
+          <td>{{ row.wasted_count }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">Нет данных</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card placements-card">
+  <h2 class="chart-title">Не конвертят в отдельных кабинетах</h2>
+  <p class="muted">В других кабинетах площадка даёт конверсии, а в этом — расход от {{ min_spend }} ₽ и 0 конверсий. Исключать точечно, в конкретном кабинете.</p>
+  {% if report.partial %}
+  <div class="table-wrap">
+    <table class="table analytics-table placements-table">
+      <thead>
+        <tr>
+          <th>Площадка</th>
+          <th>Клиент</th>
+          <th>Директолог</th>
+          <th>Расход, ₽</th>
+          <th>Клики</th>
+          <th>Конверсий в других кабинетах</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.partial %}
+        <tr>
+          <td><code class="placement-name">{{ row.placement }}</code></td>
+          <td>{{ row.client_name }}</td>
+          <td>{{ row.directologist }}</td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td>{{ row.network_conversions }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Таких площадок нет.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<script>
+function copyPlacements() {
+  const area = document.getElementById('placementList');
+  const status = document.getElementById('copyStatus');
+  if (!area) return;
+  area.select();
+  area.setSelectionRange(0, area.value.length);
+  const ok = document.execCommand('copy');
+  if (status) {
+    status.textContent = ok ? 'Скопировано' : 'Не удалось скопировать — выделите текст вручную';
+  }
+}
+</script>
+{% endblock %}

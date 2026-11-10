@@ -332,7 +332,8 @@ code {
   color: var(--muted);
 }
 
-.filters-form input[type="date"] {
+.filters-form input[type="date"],
+.filters-form input[type="number"] {
   display: block;
   margin-top: 0.35rem;
   padding: 0.55rem 0.75rem;
@@ -759,6 +760,18 @@ code {
   color: var(--text);
   font: inherit;
   resize: vertical;
+}
+
+.rsya-cabinets summary {
+  cursor: pointer;
+}
+
+.rsya-cabinets ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  white-space: normal;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
 
 .copy-list-label {

@@ -1,0 +1,374 @@
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from dataclasses import dataclass, field
+from datetime import date
+
+from sqlalchemy.orm import Session, joinedload
+
+from src.config import Settings
+from src.db.models import Client
+from src.services.parallel_fetch import map_parallel
+from src.vat import cost_with_vat
+from src.yandex_direct import YandexDirectClient, _parse_float, _parse_int, conversions_for_goal
+
+logger = logging.getLogger(__name__)
+
+RESULT_TTL_SECONDS = 6 * 60 * 60
+DEFAULT_MIN_SPEND = 600.0
+
+
+@dataclass(frozen=True)
+class CabinetRef:
+    client_id: int
+    client_name: str
+    directologist: str
+    yandex_login: str
+    goal_ids: tuple[int, ...]
+    attribution_model: str
+
+
+@dataclass(frozen=True)
+class PlacementStat:
+    spend: float
+    clicks: int
+    impressions: int
+    conversions: float
+
+
+@dataclass(frozen=True)
+class CabinetPlacements:
+    cabinet: CabinetRef
+    placements: dict[str, PlacementStat]
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class CabinetShare:
+    client_id: int
+    client_name: str
+    directologist: str
+    spend: float
+    clicks: int
+    conversions: float
+
+
+@dataclass(frozen=True)
+class NetworkPlacement:
+    placement: str
+    spend: float
+    clicks: int
+    impressions: int
+    conversions: float
+    cabinets: tuple[CabinetShare, ...]
+
+
+@dataclass(frozen=True)
+class PartialWaste:
+    placement: str
+    cabinet: CabinetShare
+    network_conversions: float
+
+
+@dataclass(frozen=True)
+class CabinetWaste:
+    client_id: int
+    client_name: str
+    directologist: str
+    rsya_spend: float
+    wasted_spend: float
+    wasted_count: int
+
+
+@dataclass(frozen=True)
+class RsyaNetworkReport:
+    date_from: date
+    date_to: date
+    min_spend: float
+    dead: tuple[NetworkPlacement, ...]
+    partial: tuple[PartialWaste, ...]
+    cabinets: tuple[CabinetWaste, ...]
+    errors: tuple[tuple[str, str], ...]
+    total_rsya_spend: float
+    total_dead_spend: float
+    cabinets_total: int
+
+    @property
+    def dead_share_percent(self) -> float | None:
+        if self.total_rsya_spend <= 0:
+            return None
+        return self.total_dead_spend / self.total_rsya_spend * 100
+
+
+def parse_cabinet_placements(
+    rows: list[dict[str, str]],
+    goal_ids: list[int] | tuple[int, ...],
+    attribution_model: str,
+    vat_rate: float,
+) -> dict[str, PlacementStat]:
+    totals: dict[str, list[float]] = {}
+    for row in rows:
+        placement = (row.get("Placement") or "").strip()
+        if not placement or placement == "—":
+            continue
+        bucket = totals.setdefault(placement, [0.0, 0.0, 0.0, 0.0])
+        bucket[0] += _parse_float(row.get("Cost", "0"))
+        bucket[1] += _parse_int(row.get("Clicks", "0"))
+        bucket[2] += _parse_int(row.get("Impressions", "0"))
+        bucket[3] += sum(conversions_for_goal(row, gid, attribution_model) for gid in goal_ids)
+    return {
+        name: PlacementStat(
+            spend=cost_with_vat(cost_raw, vat_rate),
+            clicks=int(clicks),
+            impressions=int(impressions),
+            conversions=conversions,
+        )
+        for name, (cost_raw, clicks, impressions, conversions) in totals.items()
+    }
+
+
+def build_network_report(
+    cabinets: list[CabinetPlacements],
+    date_from: date,
+    date_to: date,
+    *,
+    min_spend: float = DEFAULT_MIN_SPEND,
+) -> RsyaNetworkReport:
+    by_placement: dict[str, list[tuple[CabinetRef, PlacementStat]]] = {}
+    errors: list[tuple[str, str]] = []
+    for item in cabinets:
+        if item.error:
+            errors.append((item.cabinet.client_name, item.error))
+            continue
+        for name, stat in item.placements.items():
+            by_placement.setdefault(name, []).append((item.cabinet, stat))
+
+    dead: list[NetworkPlacement] = []
+    partial: list[PartialWaste] = []
+    for name, entries in by_placement.items():
+        shares = tuple(
+            sorted(
+                (
+                    CabinetShare(
+                        client_id=cabinet.client_id,
+                        client_name=cabinet.client_name,
+                        directologist=cabinet.directologist,
+                        spend=stat.spend,
+                        clicks=stat.clicks,
+                        conversions=stat.conversions,
+                    )
+                    for cabinet, stat in entries
+                ),
+                key=lambda share: share.spend,
+                reverse=True,
+            )
+        )
+        spend = sum(share.spend for share in shares)
+        conversions = sum(share.conversions for share in shares)
+        if conversions <= 0:
+            if spend >= min_spend:
+                dead.append(
+                    NetworkPlacement(
+                        placement=name,
+                        spend=spend,
+                        clicks=sum(stat.clicks for _, stat in entries),
+                        impressions=sum(stat.impressions for _, stat in entries),
+                        conversions=0.0,
+                        cabinets=shares,
+                    )
+                )
+            continue
+        for share in shares:
+            if share.conversions <= 0 and share.spend >= min_spend:
+                partial.append(PartialWaste(placement=name, cabinet=share, network_conversions=conversions))
+
+    dead.sort(key=lambda item: item.spend, reverse=True)
+    partial.sort(key=lambda item: item.cabinet.spend, reverse=True)
+
+    dead_by_client: dict[int, list[float]] = {}
+    for placement in dead:
+        for share in placement.cabinets:
+            bucket = dead_by_client.setdefault(share.client_id, [0.0, 0.0])
+            bucket[0] += share.spend
+            bucket[1] += 1
+
+    cabinet_rows: list[CabinetWaste] = []
+    for item in cabinets:
+        if item.error:
+            continue
+        rsya_spend = sum(stat.spend for stat in item.placements.values())
+        wasted, count = dead_by_client.get(item.cabinet.client_id, [0.0, 0.0])
+        cabinet_rows.append(
+            CabinetWaste(
+                client_id=item.cabinet.client_id,
+                client_name=item.cabinet.client_name,
+                directologist=item.cabinet.directologist,
+                rsya_spend=rsya_spend,
+                wasted_spend=wasted,
+                wasted_count=int(count),
+            )
+        )
+    cabinet_rows.sort(key=lambda row: row.wasted_spend, reverse=True)
+
+    total_rsya = sum(row.rsya_spend for row in cabinet_rows)
+    return RsyaNetworkReport(
+        date_from=date_from,
+        date_to=date_to,
+        min_spend=min_spend,
+        dead=tuple(dead),
+        partial=tuple(partial),
+        cabinets=tuple(cabinet_rows),
+        errors=tuple(errors),
+        total_rsya_spend=total_rsya,
+        total_dead_spend=sum(item.spend for item in dead),
+        cabinets_total=len(cabinets),
+    )
+
+
+def cabinet_refs(db: Session) -> tuple[list[CabinetRef], list[str]]:
+    clients = (
+        db.query(Client)
+        .options(joinedload(Client.goals))
+        .filter(Client.is_active.is_(True))
+        .order_by(Client.name)
+        .all()
+    )
+    refs: list[CabinetRef] = []
+    without_goals: list[str] = []
+    for client in clients:
+        goal_ids = tuple(sorted(goal.goal_id for goal in client.goals if goal.is_selected))
+        if not goal_ids:
+            without_goals.append(client.name)
+            continue
+        refs.append(
+            CabinetRef(
+                client_id=client.id,
+                client_name=client.name,
+                directologist=client.directologist or "—",
+                yandex_login=client.yandex_login,
+                goal_ids=goal_ids,
+                attribution_model=client.attribution_model,
+            )
+        )
+    return refs, without_goals
+
+
+@dataclass
+class NetworkJob:
+    total: int
+    started_at: float = field(default_factory=time.time)
+    done: int = 0
+    finished_at: float | None = None
+    cabinets: list[CabinetPlacements] = field(default_factory=list)
+
+    @property
+    def running(self) -> bool:
+        return self.finished_at is None
+
+    @property
+    def expired(self) -> bool:
+        return self.finished_at is not None and time.time() - self.finished_at > RESULT_TTL_SECONDS
+
+
+_JOBS: dict[tuple, NetworkJob] = {}
+_JOBS_LOCK = threading.Lock()
+
+
+def _job_key(settings: Settings, refs: list[CabinetRef], date_from: date, date_to: date) -> tuple:
+    return (
+        settings.yandex_token,
+        date_from.isoformat(),
+        date_to.isoformat(),
+        tuple((ref.client_id, ref.goal_ids, ref.attribution_model) for ref in refs),
+    )
+
+
+def _load_cabinet(settings: Settings, ref: CabinetRef, date_from: date, date_to: date) -> CabinetPlacements:
+    try:
+        api = YandexDirectClient(settings.yandex_token, ref.yandex_login)
+        rows = api.fetch_rsya_placement_report(
+            date_from,
+            date_to,
+            list(ref.goal_ids),
+            ref.attribution_model,
+        )
+        placements = parse_cabinet_placements(rows, ref.goal_ids, ref.attribution_model, settings.vat_rate)
+        return CabinetPlacements(cabinet=ref, placements=placements)
+    except Exception as exc:
+        logger.warning("РСЯ площадки: ошибка кабинета %s: %s", ref.client_name, exc)
+        return CabinetPlacements(cabinet=ref, placements={}, error=str(exc)[:300])
+
+
+def _run_job(job: NetworkJob, settings: Settings, refs: list[CabinetRef], date_from: date, date_to: date) -> None:
+    def _one(ref: CabinetRef) -> CabinetPlacements:
+        result = _load_cabinet(settings, ref, date_from, date_to)
+        with _JOBS_LOCK:
+            job.done += 1
+        return result
+
+    try:
+        job.cabinets = map_parallel(_one, refs)
+    finally:
+        job.finished_at = time.time()
+
+
+def get_network_job(
+    settings: Settings,
+    refs: list[CabinetRef],
+    date_from: date,
+    date_to: date,
+    *,
+    force: bool = False,
+) -> NetworkJob:
+    key = _job_key(settings, refs, date_from, date_to)
+    with _JOBS_LOCK:
+        job = _JOBS.get(key)
+        if job and job.running:
+            return job
+        if job and not force and not job.expired:
+            return job
+        job = NetworkJob(total=len(refs))
+        _JOBS[key] = job
+    threading.Thread(
+        target=_run_job,
+        args=(job, settings, refs, date_from, date_to),
+        name="rsya-network",
+        daemon=True,
+    ).start()
+    return job
+
+
+def _fmt_money(value: float) -> str:
+    return f"{value:,.0f}".replace(",", " ")
+
+
+def format_network_telegram(report: RsyaNetworkReport, *, limit: int = 25) -> str:
+    period = report.date_from.strftime("%d.%m.%Y")
+    if report.date_from != report.date_to:
+        period += f" — {report.date_to.strftime('%d.%m.%Y')}"
+    lines = [
+        "Операторам",
+        "",
+        f"Площадки РСЯ без конверсий во всех кабинетах (от {_fmt_money(report.min_spend)} ₽)",
+        period,
+        "",
+        f"Слито: {_fmt_money(report.total_dead_spend)} ₽",
+    ]
+    share = report.dead_share_percent
+    if share is not None:
+        lines[-1] += f" ({share:.0f}% расхода РСЯ)"
+    lines.append(f"Площадок: {len(report.dead)}")
+    lines.append("")
+    for item in report.dead[:limit]:
+        cabinets = ", ".join(share.client_name for share in item.cabinets[:3])
+        if len(item.cabinets) > 3:
+            cabinets += f" и ещё {len(item.cabinets) - 3}"
+        lines.append(f"{item.placement} — {_fmt_money(item.spend)} ₽, {item.clicks} кл. ({cabinets})")
+    if len(report.dead) > limit:
+        lines.append("")
+        lines.append(f"Ещё {len(report.dead) - limit} площадок — на странице «Площадки РСЯ».")
+    if not report.dead:
+        lines.append("Площадок без конверсий выше порога нет.")
+    return "\n".join(lines)
