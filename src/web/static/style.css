@@ -791,7 +791,7 @@ code {
 .rsya-all-filters input[type="search"] {
   display: block;
   margin-top: 0.35rem;
-  min-width: 16rem;
+  min-width: 10rem;
   padding: 0.55rem 0.75rem;
   border-radius: 8px;
   border: 1px solid var(--border);

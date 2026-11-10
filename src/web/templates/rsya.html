@@ -299,8 +299,11 @@
     <label>Поиск площадки
       <input type="search" id="allSearch" placeholder="avito, mahjong…">
     </label>
+    <label>Расход от, ₽
+      <input type="search" inputmode="decimal" id="allMinSpend" value="100">
+    </label>
     <label class="checkbox">
-      <input type="checkbox" id="allOnlyZero"> Только где есть проекты без конверсий
+      <input type="checkbox" id="allOnlyConv"> Только с конверсиями
     </label>
     <span class="muted" id="allCount">{{ report.all | length }} площадок</span>
   </div>
@@ -320,7 +323,7 @@
       </thead>
       <tbody>
         {% for row in report.all %}
-        <tr data-placement="{{ row.placement | lower }}" data-zero="{{ row.zero | length }}">
+        <tr data-placement="{{ row.placement | lower }}" data-spend="{{ row.spend_value }}" data-conv="{{ row.converting | length }}">
           <td><code class="placement-name">{{ row.placement }}</code></td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
@@ -349,23 +352,28 @@
 <script>
 (function () {
   const search = document.getElementById('allSearch');
-  const onlyZero = document.getElementById('allOnlyZero');
+  const minSpend = document.getElementById('allMinSpend');
+  const onlyConv = document.getElementById('allOnlyConv');
   const count = document.getElementById('allCount');
-  if (!search || !onlyZero) return;
+  if (!search || !minSpend || !onlyConv) return;
   const rows = Array.from(document.querySelectorAll('.rsya-all-table tbody tr[data-placement]'));
   function apply() {
     const query = search.value.trim().toLowerCase();
+    const threshold = Number(minSpend.value.replace(',', '.')) || 0;
     let visible = 0;
     rows.forEach(function (row) {
       const show = (!query || row.dataset.placement.includes(query))
-        && (!onlyZero.checked || Number(row.dataset.zero) > 0);
+        && Number(row.dataset.spend) >= threshold
+        && (!onlyConv.checked || Number(row.dataset.conv) > 0);
       row.hidden = !show;
       if (show) visible += 1;
     });
     count.textContent = visible + ' из ' + rows.length + ' площадок';
   }
   search.addEventListener('input', apply);
-  onlyZero.addEventListener('change', apply);
+  minSpend.addEventListener('input', apply);
+  onlyConv.addEventListener('change', apply);
+  apply();
 })();
 
 function copyPlacements() {

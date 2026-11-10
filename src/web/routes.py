@@ -543,6 +543,7 @@ def rsya_network_page(
             {
                 "placement": item.placement,
                 "spend": _fmt_money(item.spend),
+                "spend_value": round(item.spend, 2),
                 "clicks": _fmt_int(item.clicks),
                 "cpc": _fmt_cost(item.cpc),
                 "conversions": _fmt_conv_count(item.conversions),
