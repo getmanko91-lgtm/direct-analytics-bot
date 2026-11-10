@@ -254,15 +254,15 @@
     <span class="muted" id="allCount">{{ report.all | length }} ключевиков</span>
   </div>
   <div class="table-wrap">
-    <table class="table analytics-table placements-table rsya-all-table">
+    <table class="table analytics-table placements-table rsya-all-table keywords-all-table">
       <thead>
         <tr>
           <th>Ключевик</th>
+          <th>Конверсии</th>
+          <th>CPA, ₽</th>
           <th>Расход, ₽</th>
           <th>Клики</th>
           <th>CPC, ₽</th>
-          <th>Конверсии</th>
-          <th>CPA по всем кабинетам, ₽</th>
           <th>Проекты без конверсий</th>
           <th>Проекты с конверсиями</th>
         </tr>
@@ -271,11 +271,11 @@
         {% for row in report.all %}
         <tr data-placement="{{ row.placement | lower }}" data-spend="{{ row.spend_value }}" data-conv="{{ row.converting | length }}">
           <td><code class="placement-name">{{ row.placement }}</code></td>
+          <td>{{ row.conversions }}</td>
+          <td class="{{ row.cpa_class }}">{% if row.cpa == '—' %}нет конверсий{% else %}{{ row.cpa }}{% endif %}</td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
           <td>{{ row.cpc }}</td>
-          <td>{{ row.conversions }}</td>
-          <td class="{{ row.cpa_class }}">{% if row.cpa == '—' %}нет конверсий{% else %}{{ row.cpa }}{% endif %}</td>
           <td class="rsya-projects">
             {% if row.zero %}
             <details class="rsya-cabinets">
