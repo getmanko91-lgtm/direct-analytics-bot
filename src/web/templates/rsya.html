@@ -293,7 +293,7 @@
       <h2 class="chart-title">Все площадки</h2>
       <p class="muted">Все площадки РСЯ из всех кабинетов за период. Стоимость конверсии — общий расход на площадку по всем кабинетам ÷ все её конверсии. Справа — в каких проектах по площадке нет конверсий и где они есть.</p>
     </div>
-    <a href="/rsya/all.csv?{{ query | urlencode }}" class="btn btn-secondary btn-sm">Скачать CSV</a>
+    <a href="/rsya/all.csv?{{ query | urlencode }}" class="btn btn-secondary btn-sm btn-nowrap">Скачать CSV</a>
   </div>
   <div class="rsya-all-filters">
     <label>Поиск площадки
@@ -339,7 +339,14 @@
             {% else %}—{% endif %}
           </td>
           <td class="rsya-projects">
-            {% for share in row.converting %}{% if not loop.first %}<br>{% endif %}{{ share.client_name }} — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽{% else %}—{% endfor %}
+            {% if row.converting | length == 1 %}
+            {{ row.converting[0].client_name }} — {{ row.converting[0].conversions }} конв., CPA {{ row.converting[0].cpa }} ₽
+            {% elif row.converting %}
+            <details class="rsya-cabinets">
+              <summary>{{ row.converting | length }} проектов — {{ row.converting[0].client_name }} и др.</summary>
+              <ul>{% for share in row.converting %}<li>{{ share.client_name }} — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽</li>{% endfor %}</ul>
+            </details>
+            {% else %}—{% endif %}
           </td>
         </tr>
         {% else %}
