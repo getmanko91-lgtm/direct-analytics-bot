@@ -106,7 +106,7 @@ def _present(job: VkJob) -> dict:
         "total_clicks": _fmt_int(report["total_clicks"]),
         "best_cpa": None
         if best is None
-        else {"name": best.name, "cpa": _fmt_money(best.spend / best.goals), "goals": _fmt_goals(best.goals)},
+        else {"name": project_name(best.name), "cpa": _fmt_money(best.spend / best.goals), "goals": _fmt_goals(best.goals)},
         "errors": [(item.name, item.error) for item in report["cabinets"] if item.error],
         "types": _type_rows(campaign_type_totals(report["campaigns"])),
         "cabinets": [_cabinet_row(item) for item in report["cabinets"]],

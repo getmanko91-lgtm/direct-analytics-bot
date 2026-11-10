@@ -57,6 +57,7 @@
 </div>
 {% endif %}
 
+{% if section != 'summary' and section != 'clients' %}
 <div class="summary-grid">
   <div class="summary-card">
     <span class="summary-label">Кабинетов с результатами</span>
@@ -92,6 +93,7 @@
     {% if report.best_cpa %}<span class="muted">{{ report.best_cpa.name }}, {{ report.best_cpa.goals }} рез.</span>{% endif %}
   </div>
 </div>
+{% endif %}
 
 <div class="card placements-card">
   {% if section == 'summary' or section == 'campaigns' %}
