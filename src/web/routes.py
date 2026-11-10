@@ -42,6 +42,7 @@ from src.services.message_delivery import (
 )
 from src.services.report_runner import run_all_reports, run_client_report
 from src.services.rsya_network import (
+    DEFAULT_GOOD_MIN_CONVERSIONS as DEFAULT_RSYA_GOOD_MIN_CONVERSIONS,
     DEFAULT_MIN_SPEND as DEFAULT_RSYA_MIN_SPEND,
     build_network_report,
     cabinet_refs,
@@ -425,8 +426,19 @@ def _rsya_min_spend(value: str | None) -> float:
     return DEFAULT_RSYA_MIN_SPEND if parsed is None else parsed
 
 
-def _rsya_query(date_from: date, date_to: date, preset: str, min_spend: float) -> dict[str, str]:
-    query = {"min_spend": f"{min_spend:g}"}
+def _rsya_min_conversions(value: str | None) -> float:
+    parsed = _parse_optional_float(value)
+    return DEFAULT_RSYA_GOOD_MIN_CONVERSIONS if parsed is None else max(parsed, 1.0)
+
+
+def _rsya_query(
+    date_from: date,
+    date_to: date,
+    preset: str,
+    min_spend: float,
+    min_conv: float,
+) -> dict[str, str]:
+    query = {"min_spend": f"{min_spend:g}", "min_conv": f"{min_conv:g}"}
     if preset:
         query["period"] = preset
     else:
@@ -441,6 +453,10 @@ def _fmt_conv_count(value: float) -> str:
     return f"{value:.2f}".replace(".", ",")
 
 
+def _fmt_cost(value: float | None) -> str:
+    return _fmt_money(value) if value is not None else "—"
+
+
 @router.get("/rsya", response_class=HTMLResponse)
 def rsya_network_page(
     request: Request,
@@ -451,6 +467,7 @@ def rsya_network_page(
     params = request.query_params
     date_from, date_to, preset = _rsya_period(params)
     min_spend = _rsya_min_spend(params.get("min_spend"))
+    min_conv = _rsya_min_conversions(params.get("min_conv"))
     refs, without_goals = cabinet_refs(db)
     job = get_network_job(settings, refs, date_from, date_to, force=params.get("refresh") == "1")
 
@@ -461,7 +478,8 @@ def rsya_network_page(
         "preset": preset,
         "presets": RSYA_PRESETS,
         "min_spend": f"{min_spend:g}",
-        "query": _rsya_query(date_from, date_to, preset, min_spend),
+        "min_conv": f"{min_conv:g}",
+        "query": _rsya_query(date_from, date_to, preset, min_spend, min_conv),
         "without_goals": without_goals,
         "running": job.running,
         "progress_done": job.done,
@@ -473,35 +491,53 @@ def rsya_network_page(
     if job.running:
         return templates.TemplateResponse(request, "rsya.html", context)
 
-    report = build_network_report(job.cabinets, date_from, date_to, min_spend=min_spend)
+    report = build_network_report(
+        job.cabinets,
+        date_from,
+        date_to,
+        min_spend=min_spend,
+        good_min_conversions=min_conv,
+    )
     share = report.dead_share_percent
+
+    def _placement_row(item) -> dict:
+        return {
+            "placement": item.placement,
+            "spend": _fmt_money(item.spend),
+            "clicks": _fmt_int(item.clicks),
+            "impressions": _fmt_int(item.impressions),
+            "conversions": _fmt_conv_count(item.conversions),
+            "cpa": _fmt_cost(item.cpa),
+            "cpc": _fmt_cost(item.cpc),
+            "cabinets_count": len(item.cabinets),
+            "cabinets": [
+                {
+                    "client_name": share.client_name,
+                    "directologist": share.directologist,
+                    "spend": _fmt_money(share.spend),
+                    "clicks": _fmt_int(share.clicks),
+                    "conversions": _fmt_conv_count(share.conversions),
+                    "cpa": _fmt_cost(share.cpa),
+                    "cpc": _fmt_cost(share.cpc),
+                }
+                for share in item.cabinets
+            ],
+        }
+
     context["report"] = {
         "total_rsya_spend": _fmt_money(report.total_rsya_spend),
         "total_dead_spend": _fmt_money(report.total_dead_spend),
         "dead_share": f"{share:.0f}%" if share is not None else "—",
         "dead_count": len(report.dead),
+        "good_count": len(report.good),
+        "good_spend": _fmt_money(sum(item.spend for item in report.good)),
+        "good_conversions": _fmt_conv_count(sum(item.conversions for item in report.good)),
+        "avg_cpa": _fmt_cost(report.avg_cpa),
         "cabinets_ok": len(report.cabinets),
         "cabinets_total": report.cabinets_total,
         "errors": report.errors,
-        "dead": [
-            {
-                "placement": item.placement,
-                "spend": _fmt_money(item.spend),
-                "clicks": _fmt_int(item.clicks),
-                "impressions": _fmt_int(item.impressions),
-                "cabinets_count": len(item.cabinets),
-                "cabinets": [
-                    {
-                        "client_name": share.client_name,
-                        "directologist": share.directologist,
-                        "spend": _fmt_money(share.spend),
-                        "clicks": _fmt_int(share.clicks),
-                    }
-                    for share in item.cabinets
-                ],
-            }
-            for item in report.dead
-        ],
+        "dead": [_placement_row(item) for item in report.dead],
+        "good": [_placement_row(item) for item in report.good],
         "partial": [
             {
                 "placement": item.placement,
@@ -509,7 +545,9 @@ def rsya_network_page(
                 "directologist": item.cabinet.directologist,
                 "spend": _fmt_money(item.cabinet.spend),
                 "clicks": _fmt_int(item.cabinet.clicks),
+                "cpc": _fmt_cost(item.cabinet.cpc),
                 "network_conversions": _fmt_conv_count(item.network_conversions),
+                "network_cpa": _fmt_cost(item.network_cpa),
             }
             for item in report.partial
         ],
@@ -541,7 +579,8 @@ async def rsya_network_send(
     form = await request.form()
     date_from, date_to, preset = _rsya_period(form)
     min_spend = _rsya_min_spend(form.get("min_spend"))
-    query = _rsya_query(date_from, date_to, preset, min_spend)
+    min_conv = _rsya_min_conversions(form.get("min_conv"))
+    query = _rsya_query(date_from, date_to, preset, min_spend, min_conv)
     refs, _ = cabinet_refs(db)
     job = get_network_job(settings, refs, date_from, date_to)
     if job.running:
@@ -549,7 +588,13 @@ async def rsya_network_send(
             redirect_url("/rsya", error="Данные ещё собираются — отправьте после загрузки", **query),
             status_code=303,
         )
-    report = build_network_report(job.cabinets, date_from, date_to, min_spend=min_spend)
+    report = build_network_report(
+        job.cabinets,
+        date_from,
+        date_to,
+        min_spend=min_spend,
+        good_min_conversions=min_conv,
+    )
     try:
         target = deliver_telegram_message(db, settings, format_network_telegram(report))
         return RedirectResponse(redirect_url("/rsya", message=f"Отправлено в {target}", **query), status_code=303)

@@ -34,15 +34,18 @@
     <label>Дата по
       <input type="date" name="date_to" value="{{ date_to.isoformat() }}" required>
     </label>
-    <label>Порог расхода, ₽
+    <label>Порог расхода (сливы), ₽
       <input type="number" name="min_spend" value="{{ min_spend }}" min="0" step="50">
+    </label>
+    <label>Мин. конверсий (удачные)
+      <input type="number" name="min_conv" value="{{ min_conv }}" min="1" step="1">
     </label>
     <button type="submit" class="btn btn-primary">Показать</button>
   </form>
   <div class="quick-filters">
     <span class="muted">Период:</span>
     {% for key, label in presets.items() %}
-    <a href="/rsya?period={{ key }}&min_spend={{ min_spend }}" class="btn btn-sm {% if preset == key %}btn-primary{% else %}btn-secondary{% endif %}">{{ label }}</a>
+    <a href="/rsya?period={{ key }}&min_spend={{ min_spend }}&min_conv={{ min_conv }}" class="btn btn-sm {% if preset == key %}btn-primary{% else %}btn-secondary{% endif %}">{{ label }}</a>
     {% endfor %}
     {% if report %}
     <a href="/rsya?{{ query | urlencode }}&refresh=1" class="btn btn-secondary btn-sm">Обновить из Директа</a>
@@ -86,6 +89,14 @@
     <span class="summary-label">Площадок-сливов</span>
     <strong class="summary-value">{{ report.dead_count }}</strong>
   </div>
+  <div class="summary-card">
+    <span class="summary-label">Средний CPA в РСЯ</span>
+    <strong class="summary-value">{{ report.avg_cpa }}{% if report.avg_cpa != '—' %} ₽{% endif %}</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Удачных площадок</span>
+    <strong class="summary-value pace-deviation pace-ok">{{ report.good_count }}</strong>
+  </div>
 </div>
 
 <div class="card placements-card">
@@ -107,6 +118,9 @@
           <th>Площадка</th>
           <th>Расход, ₽</th>
           <th>Клики</th>
+          <th>CPC, ₽</th>
+          <th>Конверсии</th>
+          <th>CPA, ₽</th>
           <th>Показы</th>
           <th>Кабинеты</th>
         </tr>
@@ -117,13 +131,16 @@
           <td><code class="placement-name">{{ row.placement }}</code></td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
+          <td>{{ row.cpc }}</td>
+          <td>0</td>
+          <td class="cpa-high">нет конверсий</td>
           <td>{{ row.impressions }}</td>
           <td>
             <details class="rsya-cabinets">
               <summary>{{ row.cabinets_count }}: {{ row.cabinets[0].client_name }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
               <ul>
                 {% for share in row.cabinets %}
-                <li>{{ share.client_name }} ({{ share.directologist }}) — {{ share.spend }} ₽, {{ share.clicks }} кл.</li>
+                <li>{{ share.client_name }} ({{ share.directologist }}) — {{ share.spend }} ₽, {{ share.clicks }} кл., CPC {{ share.cpc }} ₽</li>
                 {% endfor %}
               </ul>
             </details>
@@ -140,6 +157,59 @@
   <span id="copyStatus" class="muted copy-status"></span>
   {% else %}
   <p class="muted">Площадок без конверсий с расходом от {{ min_spend }} ₽ за период нет.</p>
+  {% endif %}
+</div>
+
+<div class="card placements-card">
+  <div class="budget-pacing-header">
+    <div>
+      <h2 class="chart-title">Удачные площадки</h2>
+      <p class="muted">По всем кабинетам вместе от {{ min_conv }} конверсий и CPA не выше среднего по РСЯ ({{ report.avg_cpa }}{% if report.avg_cpa != '—' %} ₽{% endif %}). Их не исключать — можно поднимать ставки.</p>
+    </div>
+    {% if report.good_count %}
+    <span class="pace-badge pace-ok">{{ report.good_conversions }} конв. за {{ report.good_spend }} ₽</span>
+    {% endif %}
+  </div>
+  {% if report.good %}
+  <div class="table-wrap">
+    <table class="table analytics-table placements-table">
+      <thead>
+        <tr>
+          <th>Площадка</th>
+          <th>Конверсии</th>
+          <th>CPA, ₽</th>
+          <th>Расход, ₽</th>
+          <th>Клики</th>
+          <th>CPC, ₽</th>
+          <th>Кабинеты</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.good %}
+        <tr>
+          <td><code class="placement-name">{{ row.placement }}</code></td>
+          <td>{{ row.conversions }}</td>
+          <td class="cpa-low">{{ row.cpa }}</td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td>{{ row.cpc }}</td>
+          <td>
+            <details class="rsya-cabinets">
+              <summary>{{ row.cabinets_count }}: {{ row.cabinets[0].client_name }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
+              <ul>
+                {% for share in row.cabinets %}
+                <li>{{ share.client_name }} ({{ share.directologist }}) — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽, расход {{ share.spend }} ₽, CPC {{ share.cpc }} ₽</li>
+                {% endfor %}
+              </ul>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Площадок от {{ min_conv }} конверсий с CPA не выше среднего за период нет.</p>
   {% endif %}
 </div>
 
@@ -189,7 +259,10 @@
           <th>Директолог</th>
           <th>Расход, ₽</th>
           <th>Клики</th>
+          <th>CPC, ₽</th>
+          <th>CPA здесь</th>
           <th>Конверсий в других кабинетах</th>
+          <th>CPA по всем кабинетам, ₽</th>
         </tr>
       </thead>
       <tbody>
@@ -200,7 +273,10 @@
           <td>{{ row.directologist }}</td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
+          <td>{{ row.cpc }}</td>
+          <td class="cpa-high">нет конверсий</td>
           <td>{{ row.network_conversions }}</td>
+          <td>{{ row.network_cpa }}</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 
 RESULT_TTL_SECONDS = 6 * 60 * 60
 DEFAULT_MIN_SPEND = 600.0
+DEFAULT_GOOD_MIN_CONVERSIONS = 3.0
+
+
+def _ratio(numerator: float, denominator: float) -> float | None:
+    return numerator / denominator if denominator > 0 else None
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,14 @@ class CabinetShare:
     clicks: int
     conversions: float
 
+    @property
+    def cpa(self) -> float | None:
+        return _ratio(self.spend, self.conversions)
+
+    @property
+    def cpc(self) -> float | None:
+        return _ratio(self.spend, self.clicks)
+
 
 @dataclass(frozen=True)
 class NetworkPlacement:
@@ -64,12 +77,21 @@ class NetworkPlacement:
     conversions: float
     cabinets: tuple[CabinetShare, ...]
 
+    @property
+    def cpa(self) -> float | None:
+        return _ratio(self.spend, self.conversions)
+
+    @property
+    def cpc(self) -> float | None:
+        return _ratio(self.spend, self.clicks)
+
 
 @dataclass(frozen=True)
 class PartialWaste:
     placement: str
     cabinet: CabinetShare
     network_conversions: float
+    network_cpa: float | None
 
 
 @dataclass(frozen=True)
@@ -94,6 +116,13 @@ class RsyaNetworkReport:
     total_rsya_spend: float
     total_dead_spend: float
     cabinets_total: int
+    good: tuple[NetworkPlacement, ...] = ()
+    total_rsya_conversions: float = 0.0
+    good_min_conversions: float = DEFAULT_GOOD_MIN_CONVERSIONS
+
+    @property
+    def avg_cpa(self) -> float | None:
+        return _ratio(self.total_rsya_spend, self.total_rsya_conversions)
 
     @property
     def dead_share_percent(self) -> float | None:
@@ -135,6 +164,7 @@ def build_network_report(
     date_to: date,
     *,
     min_spend: float = DEFAULT_MIN_SPEND,
+    good_min_conversions: float = DEFAULT_GOOD_MIN_CONVERSIONS,
 ) -> RsyaNetworkReport:
     by_placement: dict[str, list[tuple[CabinetRef, PlacementStat]]] = {}
     errors: list[tuple[str, str]] = []
@@ -145,7 +175,12 @@ def build_network_report(
         for name, stat in item.placements.items():
             by_placement.setdefault(name, []).append((item.cabinet, stat))
 
+    total_spend = sum(stat.spend for entries in by_placement.values() for _, stat in entries)
+    total_conversions = sum(stat.conversions for entries in by_placement.values() for _, stat in entries)
+    avg_cpa = _ratio(total_spend, total_conversions)
+
     dead: list[NetworkPlacement] = []
+    good: list[NetworkPlacement] = []
     partial: list[PartialWaste] = []
     for name, entries in by_placement.items():
         shares = tuple(
@@ -180,11 +215,31 @@ def build_network_report(
                     )
                 )
             continue
+        network_cpa = spend / conversions
+        if conversions >= good_min_conversions and avg_cpa is not None and network_cpa <= avg_cpa:
+            good.append(
+                NetworkPlacement(
+                    placement=name,
+                    spend=spend,
+                    clicks=sum(stat.clicks for _, stat in entries),
+                    impressions=sum(stat.impressions for _, stat in entries),
+                    conversions=conversions,
+                    cabinets=tuple(sorted(shares, key=lambda share: share.conversions, reverse=True)),
+                )
+            )
         for share in shares:
             if share.conversions <= 0 and share.spend >= min_spend:
-                partial.append(PartialWaste(placement=name, cabinet=share, network_conversions=conversions))
+                partial.append(
+                    PartialWaste(
+                        placement=name,
+                        cabinet=share,
+                        network_conversions=conversions,
+                        network_cpa=network_cpa,
+                    )
+                )
 
     dead.sort(key=lambda item: item.spend, reverse=True)
+    good.sort(key=lambda item: (-item.conversions, item.cpa or 0))
     partial.sort(key=lambda item: item.cabinet.spend, reverse=True)
 
     dead_by_client: dict[int, list[float]] = {}
@@ -224,6 +279,9 @@ def build_network_report(
         total_rsya_spend=total_rsya,
         total_dead_spend=sum(item.spend for item in dead),
         cabinets_total=len(cabinets),
+        good=tuple(good),
+        total_rsya_conversions=total_conversions,
+        good_min_conversions=good_min_conversions,
     )
 
 
@@ -344,7 +402,17 @@ def _fmt_money(value: float) -> str:
     return f"{value:,.0f}".replace(",", " ")
 
 
-def format_network_telegram(report: RsyaNetworkReport, *, limit: int = 25) -> str:
+def _fmt_cost(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:,.2f}".replace(",", " ").replace(".", ",")
+
+
+def _fmt_conv(value: float) -> str:
+    return f"{value:g}".replace(".", ",")
+
+
+def format_network_telegram(report: RsyaNetworkReport, *, limit: int = 25, good_limit: int = 10) -> str:
     period = report.date_from.strftime("%d.%m.%Y")
     if report.date_from != report.date_to:
         period += f" — {report.date_to.strftime('%d.%m.%Y')}"
@@ -365,10 +433,28 @@ def format_network_telegram(report: RsyaNetworkReport, *, limit: int = 25) -> st
         cabinets = ", ".join(share.client_name for share in item.cabinets[:3])
         if len(item.cabinets) > 3:
             cabinets += f" и ещё {len(item.cabinets) - 3}"
-        lines.append(f"{item.placement} — {_fmt_money(item.spend)} ₽, {item.clicks} кл. ({cabinets})")
+        lines.append(
+            f"{item.placement} — {_fmt_money(item.spend)} ₽, {item.clicks} кл., "
+            f"CPC {_fmt_cost(item.cpc)} ₽, 0 конв. ({cabinets})"
+        )
     if len(report.dead) > limit:
         lines.append("")
         lines.append(f"Ещё {len(report.dead) - limit} площадок — на странице «Площадки РСЯ».")
     if not report.dead:
         lines.append("Площадок без конверсий выше порога нет.")
+
+    if report.good:
+        lines.extend(
+            [
+                "",
+                f"Удачные площадки (от {_fmt_conv(report.good_min_conversions)} конв., "
+                f"CPA не выше среднего по РСЯ {_fmt_cost(report.avg_cpa)} ₽)",
+                "",
+            ]
+        )
+        for item in report.good[:good_limit]:
+            lines.append(
+                f"{item.placement} — CPA {_fmt_cost(item.cpa)} ₽, {_fmt_conv(item.conversions)} конв., "
+                f"расход {_fmt_money(item.spend)} ₽, CPC {_fmt_cost(item.cpc)} ₽"
+            )
     return "\n".join(lines)

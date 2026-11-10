@@ -54,12 +54,38 @@ def test_dead_placement_is_zero_conversions_across_all_cabinets():
     assert report.partial[0].placement == "good.ru"
     assert report.partial[0].cabinet.client_name == "Гринпарк"
     assert report.partial[0].network_conversions == 2
+    assert abs(report.partial[0].network_cpa - 800) < 0.01
 
     assert abs(report.total_rsya_spend - 2400) < 0.01
     assert abs(report.total_dead_spend - 800) < 0.01
     by_name = {row.client_name: row for row in report.cabinets}
     assert abs(by_name["Япошка"].wasted_spend - 500) < 0.01
     assert by_name["Гринпарк"].wasted_count == 1
+
+
+def test_good_placements_need_min_conversions_and_cpa_not_above_average():
+    cabinets = [
+        CabinetPlacements(
+            _ref(1, "Япошка"),
+            {
+                "star.ru": _stat(600, conversions=4, clicks=60),
+                "pricey.ru": _stat(2000, conversions=4),
+                "rare.ru": _stat(100, conversions=1),
+            },
+        ),
+        CabinetPlacements(_ref(2, "Гринпарк"), {"star.ru": _stat(300, conversions=2, clicks=30)}),
+    ]
+    report = build_network_report(
+        cabinets, date(2026, 10, 1), date(2026, 10, 31), min_spend=600, good_min_conversions=3
+    )
+    assert abs(report.avg_cpa - 3000 / 11) < 0.01
+    assert [item.placement for item in report.good] == ["star.ru"]
+    star = report.good[0]
+    assert star.conversions == 6
+    assert abs(star.cpa - 150) < 0.01
+    assert abs(star.cpc - 10) < 0.01
+    assert [share.client_name for share in star.cabinets] == ["Япошка", "Гринпарк"]
+    assert abs(star.cabinets[1].cpa - 150) < 0.01
 
 
 def test_threshold_and_errors():
@@ -81,6 +107,6 @@ def test_telegram_text_lists_top_placements():
     report = build_network_report(cabinets, date(2026, 10, 1), date(2026, 10, 31), min_spend=600)
     text = format_network_telegram(report)
     assert "Операторам" in text
-    assert "dead.ru — 1 500 ₽, 10 кл. (Япошка)" in text
+    assert "dead.ru — 1 500 ₽, 10 кл., CPC 150,00 ₽, 0 конв. (Япошка)" in text
     assert "Слито: 1 500 ₽ (100% расхода РСЯ)" in text
     assert "Площадок: 1" in text
