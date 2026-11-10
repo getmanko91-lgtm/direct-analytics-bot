@@ -8,6 +8,7 @@ from datetime import date
 
 from src.config import Settings
 from src.services.direct_report_rows import fetch_campaign_performance_rows
+from src.services.kpi_table import is_kpi_campaign
 from src.services.parallel_fetch import map_parallel
 from src.services.rsya_network import CabinetRef, cabinet_refs
 from src.vat import cost_with_vat
@@ -314,6 +315,8 @@ def parse_cabinet_facts(
     for row in rows:
         campaign_id = _parse_int(row.get("CampaignId"))
         name = (row.get("CampaignName") or "").strip() or "—"
+        if not is_kpi_campaign(name):
+            continue
         key: int | str = campaign_id or name
         fact = grouped.get(key)
         if fact is None:

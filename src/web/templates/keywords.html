@@ -7,7 +7,7 @@
 <div class="page-header">
   <div>
     <h1>Ключевики</h1>
-    <p class="muted">За {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}: какая фраза в каком проекте не дала ни одной продажи. Кампании «КОНВЕР», «МК», «ЕПК», «ТМК», цели те же, что на странице KPI.</p>
+    <p class="muted">За {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}: какая фраза в каком проекте не дала ни одной продажи. Только кампании «КОНВЕР», «КОНВЕРС», «МК», «ЕПК», «ТМК» и цели, отмеченные у клиента на странице KPI.</p>
   </div>
   {% if report %}
   <form method="post" action="/keywords/send">

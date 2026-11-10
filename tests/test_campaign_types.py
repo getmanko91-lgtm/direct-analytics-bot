@@ -113,6 +113,7 @@ def test_types_are_summed_across_cabinets_and_ranked_by_sales():
         {"CampaignId": "1", "CampaignName": "МК Поиск", "Cost": "1000", "Clicks": "10", "Impressions": "100", "Conversions_11_AUTO": "2"},
         {"CampaignId": "1", "CampaignName": "МК Поиск", "Cost": "500", "Clicks": "5", "Impressions": "40", "Conversions_11_AUTO": "1"},
         {"CampaignId": "2", "CampaignName": "ЕПК Сеть", "Cost": "2000", "Clicks": "4", "Impressions": "80", "Conversions_11_AUTO": "1"},
+        {"CampaignId": "3", "CampaignName": "ИМИДЖ охват", "Cost": "5000", "Clicks": "40", "Impressions": "800", "Conversions_11_AUTO": "9"},
     ]
     strategies = {
         1: ("Максимум конверсий", "За клики", "Недельный бюджет"),

@@ -7,7 +7,7 @@
 <div class="page-header">
   <div>
     <h1>Типы кампаний</h1>
-    <p class="muted">Все кабинеты за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. Кампании сгруппированы по первому слову названия: КОНВЕР, МК, ЕПК, ТМК и остальные. Продажи — конверсии по целям, выбранным у клиента, как на странице KPI. С НДС.</p>
+    <p class="muted">Все кабинеты за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. Как на странице KPI: только кампании «КОНВЕР», «КОНВЕРС», «МК», «ЕПК», «ТМК» и конверсии по целям, отмеченным у клиента. С НДС.</p>
   </div>
 </div>
 
@@ -52,7 +52,7 @@
 
 <div class="summary-grid">
   <div class="summary-card">
-    <span class="summary-label">Расход, все кампании</span>
+    <span class="summary-label">Расход кампаний KPI</span>
     <strong class="summary-value">{{ report.total_spend }} ₽</strong>
   </div>
   <div class="summary-card">
