@@ -8,6 +8,7 @@ from src.services.vk_analytics import (
     campaign_kind,
     campaign_type_totals,
     goals_of,
+    is_live_cabinet,
 )
 
 
@@ -46,6 +47,32 @@ def test_univers_is_not_counted_as_vk_result():
     assert totals["join"]["goals"] == 2
     assert totals["senler"]["goals"] == 0
     assert totals["senler"]["spend"] == 80
+
+
+def _cabinet(client_id: int, name: str, status: str, goals: float, spend: float, error: str | None = None) -> VkCabinet:
+    return VkCabinet(
+        client_id=client_id,
+        name=name,
+        username="",
+        status=status,
+        balance=0,
+        spend=spend,
+        shows=1,
+        clicks=1,
+        goals=goals,
+        error=error,
+    )
+
+
+def test_archived_cabinets_are_excluded():
+    live = _cabinet(1, "Пряников Иркутск", "active", 5, 10)
+    archived = _cabinet(2, "Тэйк Ит (TakeEat)", "blocked", 100, 500, "VK oauth: 400 invalid_request")
+    deleted = _cabinet(3, "Каннам Чикен Иркутск", "deleted", 40, 80)
+    report = build_vk_report([live, archived, deleted])
+    assert [item.name for item in report["cabinets"]] == ["Пряников Иркутск"]
+    assert report["total_goals"] == 5
+    assert report["total_spend"] == 10
+    assert is_live_cabinet(archived) is False
 
 
 def test_goals_prefer_vk_result():

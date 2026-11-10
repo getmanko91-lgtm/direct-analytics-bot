@@ -203,7 +203,15 @@ def text_identity(title: str, body: str, banner_id: int) -> str:
     return compact or f"#{banner_id}"
 
 
+def is_live_cabinet(cabinet: VkCabinet) -> bool:
+    """Архив и заблокированные кабинеты VK не отдаёт: их не показываем и не считаем."""
+    if cabinet.status != "active":
+        return False
+    return "invalid_request" not in (cabinet.error or "").casefold()
+
+
 def build_vk_report(cabinets: list[VkCabinet]) -> dict:
+    cabinets = [cabinet for cabinet in cabinets if is_live_cabinet(cabinet)]
     campaigns = []
     texts: dict[str, dict] = {}
     audiences = []
@@ -329,7 +337,7 @@ def _agency_overview(api: VkAdsClient, date_from: date, date_to: date, vat_rate:
             item.get("user")
             for item in api.get_paged(token, "agency/clients", limit=50)
         )
-        if isinstance(user, dict) and user.get("id")
+        if isinstance(user, dict) and user.get("id") and user.get("status") == "active"
     }
     stats = api.get(
         token,
@@ -342,7 +350,7 @@ def _agency_overview(api: VkAdsClient, date_from: date, date_to: date, vat_rate:
             continue
         spend, shows, clicks, goals = metrics_of(item)
         by_id[int(item["id"])] = (cost_with_vat(spend, vat_rate), shows, clicks, goals)
-    ids = list(dict.fromkeys([*clients.keys(), *by_id.keys()]))
+    ids = list(clients.keys())
     cabinets = []
     for client_id in ids:
         user = clients.get(client_id) or {}
