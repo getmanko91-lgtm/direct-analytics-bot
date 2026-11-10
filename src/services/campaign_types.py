@@ -69,6 +69,10 @@ def campaign_type_of(name: str) -> str:
     token = token.strip()
     if not token:
         return "ДРУГИЕ"
+    if token.startswith("КОНВЕР"):
+        return "КОНВЕР"
+    if token.startswith("ПРИЛ"):
+        return "ПРИЛОЖ"
     mapped = _TYPE_ALIASES.get(token, token)
     if mapped.isalpha() and 2 <= len(mapped) <= 16:
         return mapped
@@ -166,7 +170,8 @@ def _budget_kind(node: dict) -> str:
 def strategies_by_campaign(campaigns: list[dict]) -> dict[int, tuple[str, str, str]]:
     found: dict[int, tuple[str, str, str]] = {}
     for campaign in campaigns:
-        campaign_id = _parse_int(campaign.get("Id"))
+        raw_id = campaign.get("Id")
+        campaign_id = raw_id if isinstance(raw_id, int) else _parse_int(str(raw_id or ""))
         if not campaign_id:
             continue
         block = None

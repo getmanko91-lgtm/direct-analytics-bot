@@ -8,6 +8,7 @@ from src.services.campaign_types import (
     campaign_type_of,
     describe_strategy,
     parse_cabinet_facts,
+    strategies_by_campaign,
 )
 from src.services.rsya_network import CabinetRef
 
@@ -27,6 +28,7 @@ def test_campaign_type_uses_first_word_and_known_aliases():
     assert campaign_type_of("ТМК Поиск Сочи") == "ТМК"
     assert campaign_type_of("мк рся") == "МК"
     assert campaign_type_of("КОНВЕРСИИ бренд") == "КОНВЕР"
+    assert campaign_type_of("КОНВЕРСИ поиск") == "КОНВЕР"
     assert campaign_type_of("ЕПК-доставка") == "ЕПК"
     assert campaign_type_of("123 акция") == "ДРУГИЕ"
 
@@ -62,6 +64,24 @@ def test_describe_strategy_payment_model_and_budget():
         "Смешанная",
         "Недельный бюджет",
     )
+
+
+def test_strategy_index_accepts_numeric_campaign_id():
+    campaigns = [
+        {
+            "Id": 15,
+            "TextCampaign": {
+                "BiddingStrategy": {
+                    "Search": {
+                        "BiddingStrategyType": "WB_MAXIMUM_CLICKS",
+                        "WbMaximumClicks": {"WeeklySpendLimit": 1_000_000},
+                    },
+                    "Network": {"BiddingStrategyType": "SERVING_OFF"},
+                }
+            },
+        }
+    ]
+    assert strategies_by_campaign(campaigns)[15][0] == "Максимум кликов"
 
 
 def test_types_are_summed_across_cabinets_and_ranked_by_sales():
