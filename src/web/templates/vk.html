@@ -210,6 +210,15 @@
     <label>Поиск текста
       <input type="search" id="vkSearch" placeholder="доставка, роллы…">
     </label>
+    <label>Куда гнали
+      <select id="vkKind">
+        <option value="">Все</option>
+        <option value="zk">Закрытый клуб</option>
+        <option value="join">Вступление</option>
+        <option value="senler">Универс</option>
+        <option value="other">Другое</option>
+      </select>
+    </label>
     <label class="checkbox">
       <input type="checkbox" id="vkDeleted" checked> Показывать удалённые
     </label>
@@ -220,6 +229,7 @@
       <thead>
         <tr>
           <th>Текст</th>
+          <th>Куда</th>
           <th>Результаты</th>
           <th>CPA, ₽</th>
           <th>Расход, ₽</th>
@@ -229,11 +239,12 @@
       </thead>
       <tbody>
         {% for row in report.texts %}
-        <tr data-text="{{ row.search }}" data-deleted="{{ '1' if row.deleted else '0' }}">
+        <tr data-text="{{ row.search }}" data-kind="{{ row.kind }}" data-deleted="{{ '1' if row.deleted else '0' }}">
           <td>
             <div class="ad-text-title">{{ row.title }}</div>
             {% if row.body %}<div class="muted ad-text-body">{{ row.body }}</div>{% endif %}
           </td>
+          <td>{{ row.kind_label }}</td>
           <td>{{ row.goals }}</td>
           <td class="{{ row.cpa_class }}">{{ row.cpa }}</td>
           <td>{{ row.spend }}</td>
@@ -245,7 +256,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="muted">Нет текстов за период</td></tr>
+        <tr><td colspan="7" class="muted">Нет текстов за период</td></tr>
         {% endfor %}
       </tbody>
     </table>

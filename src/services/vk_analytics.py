@@ -32,6 +32,12 @@ CAMPAIGN_KIND_LABELS = {
     "senler": "Универс",
     "other": "Другие",
 }
+DESTINATION_LABELS = {
+    "zk": "Закрытый клуб",
+    "join": "Вступление",
+    "senler": "Универс",
+    "other": "Другое",
+}
 _COPY_PREFIX = re.compile(r"^(?:копия(?:_\d+)?\s+)+", re.IGNORECASE)
 _LEGAL_ENTITY = re.compile(
     r"\s*[\(（]\s*(?:ип|ооо|оао|зао|пао|ао|чп)\b.*?[\)）]|\s+(?:ип|ооо|оао|зао|пао)\b.*$",
@@ -61,6 +67,7 @@ class VkText:
     shows: int
     clicks: int
     goals: float
+    kind: str = ""
 
 
 @dataclass
@@ -230,10 +237,17 @@ def build_vk_report(cabinets: list[VkCabinet]) -> dict:
         for plan in cabinet.campaigns:
             campaigns.append((cabinet, plan))
         for ad in cabinet.texts:
-            key = text_identity(ad.title, ad.body, ad.banner_id)
+            kind = ad.kind if ad.kind in DESTINATION_LABELS else "other"
+            key = f"{kind}\n{text_identity(ad.title, ad.body, ad.banner_id)}"
             bucket = texts.setdefault(
                 key,
-                {"title": ad.title, "body": ad.body, "deleted": ad.status == "deleted", "shares": {}},
+                {
+                    "title": ad.title,
+                    "body": ad.body,
+                    "kind": kind,
+                    "deleted": ad.status == "deleted",
+                    "shares": {},
+                },
             )
             if not bucket["title"] and ad.title:
                 bucket["title"] = ad.title
@@ -242,7 +256,7 @@ def build_vk_report(cabinets: list[VkCabinet]) -> dict:
                 bucket["deleted"] = False
             share = bucket["shares"].setdefault(
                 cabinet.client_id,
-                {"name": cabinet.name, "spend": 0.0, "clicks": 0, "goals": 0.0},
+                {"name": project_name(cabinet.name), "spend": 0.0, "clicks": 0, "goals": 0.0},
             )
             share["spend"] += ad.spend
             share["clicks"] += ad.clicks
@@ -261,6 +275,7 @@ def build_vk_report(cabinets: list[VkCabinet]) -> dict:
             {
                 "title": title,
                 "body": bucket["body"],
+                "kind": bucket["kind"],
                 "deleted": title == "Объявление удалено" and not bucket["body"],
                 "spend": spend,
                 "clicks": clicks,
@@ -286,7 +301,7 @@ def build_vk_report(cabinets: list[VkCabinet]) -> dict:
 def get_vk_job(settings: Settings, date_from: date, date_to: date, *, force: bool = False) -> VkJob:
     if not settings.vk_configured:
         return VkJob(total=0, done=0, finished_at=time.time(), error="В .env не заданы VK_ADS_CLIENT_ID и VK_ADS_CLIENT_SECRET")
-    key = (settings.vk_ads_agency_id, settings.vk_ads_client_id, date_from.isoformat(), date_to.isoformat(), "vk-v1")
+    key = (settings.vk_ads_agency_id, settings.vk_ads_client_id, date_from.isoformat(), date_to.isoformat(), "vk-v2")
     with _JOBS_LOCK:
         job = _JOBS.get(key)
         if job and job.running:
@@ -396,6 +411,11 @@ def _load_details(
         token = api.client_token(cabinet.client_id)
         period = {"date_from": date_from.isoformat(), "date_to": date_to.isoformat(), "metrics": "base"}
         plans = api.get_paged(token, "ad_plans", {"fields": "id,name,status,objective"}, limit=50)
+        plan_names = {
+            int(plan.get("id") or 0): _clean(plan.get("name") or "")
+            for plan in plans
+            if plan.get("id")
+        }
         plan_stats = _stats_by_id(api, token, "statistics/ad_plans/summary", period)
         for plan in plans:
             plan_id = int(plan.get("id") or 0)
@@ -416,7 +436,7 @@ def _load_details(
                     goals=goals,
                 )
             )
-        banners = api.get_paged(token, "banners", {"fields": "id,name,status,textblocks"}, limit=50)
+        banners = api.get_paged(token, "banners", {"fields": "id,name,status,textblocks,ad_plan_id"}, limit=50)
         banner_stats = _stats_by_id(api, token, "statistics/banners/summary", period)
         for banner in banners:
             banner_id = int(banner.get("id") or 0)
@@ -426,6 +446,7 @@ def _load_details(
             title, body = banner_copy(banner.get("textblocks"))
             if spend <= 0 and clicks <= 0 and goals <= 0:
                 continue
+            plan_name = plan_names.get(int(banner.get("ad_plan_id") or 0), "")
             cabinet.texts.append(
                 VkText(
                     banner_id=banner_id,
@@ -436,6 +457,7 @@ def _load_details(
                     shows=shows,
                     clicks=clicks,
                     goals=goals,
+                    kind=campaign_kind(plan_name),
                 )
             )
         for segment in api.get_paged(token, "remarketing/segments", limit=50):

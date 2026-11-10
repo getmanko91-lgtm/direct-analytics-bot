@@ -9,6 +9,7 @@ from src.services.cpa_style import cpa_highlight_class
 from src.services.vk_analytics import (
     CAMPAIGN_KIND_LABELS,
     CAMPAIGN_KINDS,
+    DESTINATION_LABELS,
     VkCabinet,
     VkJob,
     build_vk_report,
@@ -179,9 +180,13 @@ def _campaign_row(cabinet: VkCabinet, plan) -> dict:
 
 def _text_row(item: dict) -> dict:
     cpa = _cpa(item["spend"], item["goals"])
+    kind = item.get("kind") or "other"
+    label = DESTINATION_LABELS.get(kind, "Другое")
     return {
         "title": item["title"],
         "body": item["body"],
+        "kind": kind,
+        "kind_label": label,
         "deleted": item["deleted"],
         "goals": _fmt_goals(item["goals"]),
         "goals_value": item["goals"],
@@ -189,7 +194,7 @@ def _text_row(item: dict) -> dict:
         "clicks": _fmt_int(item["clicks"]),
         "cpa": "—" if cpa is None else _fmt_money(cpa),
         "cpa_class": cpa_highlight_class(cpa),
-        "search": f"{item['title']} {item['body']}".casefold(),
+        "search": f"{item['title']} {item['body']} {label}".casefold(),
         "shares": [_share_row(share) for share in item["shares"]],
     }
 

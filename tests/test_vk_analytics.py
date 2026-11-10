@@ -99,6 +99,26 @@ def test_banner_copy_reads_vk_textblocks():
     assert body == "Свежие суши с доставкой"
 
 
+def test_same_text_is_split_by_destination():
+    club = VkText(1, "Роллы", "за 30 минут", "active", 100, 10, 2, 4, "zk")
+    join = VkText(2, "Роллы", "за 30 минут", "active", 50, 5, 1, 2, "join")
+    cabinet = VkCabinet(
+        client_id=1,
+        name="Курган (ИП Иванов)",
+        username="",
+        status="active",
+        balance=0,
+        spend=150,
+        shows=15,
+        clicks=3,
+        goals=6,
+        texts=[club, join],
+    )
+    report = build_vk_report([cabinet])
+    assert [(item["kind"], item["goals"]) for item in report["texts"]] == [("zk", 4), ("join", 2)]
+    assert report["texts"][0]["shares"][0]["name"] == "Курган"
+
+
 def test_same_text_is_summed_across_cabinets():
     first = VkCabinet(
         client_id=1,
