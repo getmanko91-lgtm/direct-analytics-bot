@@ -11,6 +11,7 @@ from datetime import date
 from src.config import Settings
 from src.services.kpi_table import is_kpi_campaign
 from src.services.parallel_fetch import map_parallel
+from src.services.report_store import begin_collection, remember_partial, save_finished
 from src.services.rsya_network import CabinetRef, cabinet_refs
 from src.vat import cost_with_vat
 from src.yandex_direct import YandexDirectClient, _parse_float, _parse_int, conversions_for_goal
@@ -356,17 +357,33 @@ def _job_key(settings: Settings, refs: list[CabinetRef], date_from: date, date_t
     )
 
 
-def _run_job(job: AdTextsJob, settings: Settings, refs: list[CabinetRef], date_from: date, date_to: date) -> None:
+def _run_job(
+    job: AdTextsJob,
+    settings: Settings,
+    refs: list[CabinetRef],
+    date_from: date,
+    date_to: date,
+    key: tuple,
+) -> None:
     def _one(ref: CabinetRef) -> CabinetAds:
         result = _load_cabinet(settings, ref, date_from, date_to)
         with _JOBS_LOCK:
             job.done += 1
+            job.cabinets.append(result)
+        remember_partial("ad-texts", key, ref.client_id, result)
         return result
 
     try:
-        job.cabinets = map_parallel(_one, refs)
-    finally:
-        job.finished_at = time.time()
+        if refs:
+            map_parallel(_one, refs)
+    except Exception:
+        logger.exception("Тексты: сбор прервался, уже готовые кабинеты сохранены")
+        with _JOBS_LOCK:
+            if _JOBS.get(key) is job:
+                _JOBS.pop(key, None)
+        return
+    job.finished_at = time.time()
+    save_finished("ad-texts", key, job.cabinets, job.finished_at)
 
 
 def get_ad_texts_job(
@@ -384,11 +401,18 @@ def get_ad_texts_job(
             return job
         if job and not force and not job.expired:
             return job
-        job = AdTextsJob(total=len(refs))
+        finished, partial = begin_collection("ad-texts", key, force=force, ttl_seconds=RESULT_TTL_SECONDS)
+        if finished is not None:
+            finished_at, cabinets = finished
+            job = AdTextsJob(total=len(cabinets), done=len(cabinets), finished_at=finished_at, cabinets=cabinets)
+            _JOBS[key] = job
+            return job
+        job = AdTextsJob(total=len(refs), done=len(partial), cabinets=list(partial.values()))
         _JOBS[key] = job
+    pending = [ref for ref in refs if ref.client_id not in partial]
     threading.Thread(
         target=_run_job,
-        args=(job, settings, refs, date_from, date_to),
+        args=(job, settings, pending, date_from, date_to, key),
         name="ad-texts",
         daemon=True,
     ).start()
