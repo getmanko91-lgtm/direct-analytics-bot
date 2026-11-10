@@ -56,11 +56,12 @@ def test_parse_keywords_keeps_kpi_campaigns_and_merges_case():
         },
     ]
     parsed = parse_cabinet_keywords(rows, (11,), "AUTO", 0.22)
-    assert list(parsed) == ["суши доставка"]
+    assert set(parsed) == {"суши доставка", "Автотаргетинг"}
     stat = parsed["суши доставка"]
     assert abs(stat.spend - 1830.0) < 0.01
     assert stat.clicks == 8
     assert stat.conversions == 3
+    assert parsed["Автотаргетинг"].conversions == 5
 
 
 def test_keyword_project_miss_is_one_row_per_project_without_sales():
@@ -85,6 +86,12 @@ def test_keyword_project_miss_is_one_row_per_project_without_sales():
     assert [(item.project, item.keyword, item.conversions_elsewhere) for item in misses] == [
         ("Япошка", "роллы", 3),
         ("Япошка", "пицца", 0),
+    ]
+    everything = keyword_project_misses(report, 0)
+    assert [(item.project, item.keyword) for item in everything] == [
+        ("Япошка", "роллы"),
+        ("Япошка", "пицца"),
+        ("Гринпарк", "пицца"),
     ]
 
 

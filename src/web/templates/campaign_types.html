@@ -137,6 +137,52 @@
 </div>
 {% endmacro %}
 
+<div class="card placements-card" id="campaign-waste">
+  <div class="budget-pacing-header">
+    <div>
+      <h2 class="chart-title">Настройки без продаж</h2>
+      <p class="muted">Каждая кампания KPI, которая потратила деньги и не принесла ни одной продажи. Рядом стратегия, модель оплаты и бюджет — то, что можно выключить или сузить, не трогая кампании с продажами.</p>
+    </div>
+  </div>
+  {% if report.wasted %}
+  <div class="rsya-all-filters">
+    <label>Поиск
+      <input type="search" id="wasteSearch" placeholder="проект, стратегия…">
+    </label>
+    <span class="muted" id="wasteCount">{{ report.wasted | length }} кампаний</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table analytics-table vk-table">
+      <thead>
+        <tr>
+          <th>Кампания</th>
+          <th>Проект</th>
+          <th>Слито, ₽</th>
+          <th>Клики</th>
+          <th>Стратегия</th>
+          <th>Оплата</th>
+          <th>Бюджет</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.wasted %}
+        <tr data-text="{{ row.search }}">
+          <td class="wrap">{{ row.name }}</td>
+          <td class="wrap">{{ row.client }}<div class="muted">{{ row.directologist }}</div></td>
+          <td class="miss-spend">{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td class="wrap">{{ row.strategy }}</td>
+          <td>{{ row.payment }}</td>
+          <td class="wrap">{{ row.budget }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Кампаний с расходом и нулём продаж за период нет.</p>
+  {% endif %}
+</div>
 {{ group_table(
   "Типы кампаний",
   "Цифры всех кабинетов сложены. Лучший CPA считается среди типов, где не меньше 3 конверсий.",
@@ -158,4 +204,23 @@
   report.by_budget
 ) }}
 {% endif %}
+<script>
+(function () {
+  const search = document.getElementById('wasteSearch');
+  const count = document.getElementById('wasteCount');
+  if (!search || !count) return;
+  const rows = Array.from(document.querySelectorAll('#campaign-waste tbody tr[data-text]'));
+  function apply() {
+    const query = search.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(function (row) {
+      const show = !query || row.dataset.text.includes(query);
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    count.textContent = visible + ' из ' + rows.length + ' кампаний';
+  }
+  search.addEventListener('input', apply);
+})();
+</script>
 {% endblock %}

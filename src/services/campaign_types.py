@@ -278,6 +278,7 @@ class CampaignFact:
     strategy: str
     payment: str
     budget: str
+    name: str = ""
     spend: float = 0.0
     clicks: int = 0
     impressions: int = 0
@@ -330,6 +331,7 @@ def parse_cabinet_facts(
                 strategy=strategy,
                 payment=payment,
                 budget=budget,
+                name=name,
             )
             grouped[key] = fact
         fact.spend += _parse_float(row.get("Cost", "0"))
@@ -437,6 +439,19 @@ def build_campaign_types_report(
     )
 
 
+def campaigns_without_sales(cabinets: list[CabinetCampaigns]) -> list[CampaignFact]:
+    """Кампании KPI с расходом и нулём продаж: стратегия и оплата, которые сливают бюджет."""
+    wasted = [
+        fact
+        for item in cabinets
+        if not item.error
+        for fact in item.facts
+        if fact.spend > 0 and fact.conversions <= 0
+    ]
+    wasted.sort(key=lambda fact: fact.spend, reverse=True)
+    return wasted
+
+
 def best_labels(slices: tuple[GroupSlice, ...]) -> tuple[str | None, str | None]:
     with_sales = [item for item in slices if item.conversions > 0]
     best_conversions = with_sales[0].label if with_sales else None
@@ -509,6 +524,7 @@ def _job_key(settings: Settings, refs: list[CabinetRef], date_from: date, date_t
         settings.yandex_token,
         date_from.isoformat(),
         date_to.isoformat(),
+        "campaigns-v2",
         tuple((ref.client_id, ref.goal_ids, ref.attribution_model) for ref in refs),
     )
 

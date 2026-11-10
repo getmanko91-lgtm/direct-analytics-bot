@@ -50,6 +50,7 @@ from src.services.ad_texts import (
 from src.services.campaign_types import (
     best_labels,
     build_campaign_types_report,
+    campaigns_without_sales,
     get_campaign_types_job,
 )
 from src.services.keywords_network import (
@@ -61,7 +62,6 @@ from src.services.keywords_network import (
 )
 from src.services.rsya_network import (
     DEFAULT_GOOD_MIN_CONVERSIONS as DEFAULT_RSYA_GOOD_MIN_CONVERSIONS,
-    DEFAULT_MIN_SPEND as DEFAULT_RSYA_MIN_SPEND,
     build_network_report,
     cabinet_refs,
     format_all_placements_csv,
@@ -442,7 +442,8 @@ def _rsya_period(params) -> tuple[date, date, str]:
 
 def _rsya_min_spend(value: str | None) -> float:
     parsed = _parse_optional_float(value)
-    return DEFAULT_RSYA_MIN_SPEND if parsed is None else parsed
+    # По умолчанию показываем весь слив, а не только фразы и площадки дороже 600 ₽.
+    return 0.0 if parsed is None else parsed
 
 
 def _rsya_min_conversions(value: str | None) -> float:
@@ -902,6 +903,20 @@ def campaign_types_page(
         "best_type_cpa": _winner(by_type, "best_cpa"),
         "best_strategy": _winner(by_strategy, "best_conversions"),
         "best_payment": _winner(by_payment, "best_conversions"),
+        "wasted": [
+            {
+                "name": fact.name or "Кампания",
+                "client": fact.client_name,
+                "directologist": fact.directologist,
+                "strategy": fact.strategy,
+                "payment": fact.payment,
+                "budget": fact.budget,
+                "spend": _fmt_money(fact.spend),
+                "clicks": _fmt_int(fact.clicks),
+                "search": f"{fact.name} {fact.client_name} {fact.strategy} {fact.payment}".casefold(),
+            }
+            for fact in campaigns_without_sales(job.cabinets)
+        ],
     }
     return templates.TemplateResponse(request, "campaign_types.html", context)
 

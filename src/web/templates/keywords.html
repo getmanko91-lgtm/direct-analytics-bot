@@ -76,7 +76,7 @@
   <div class="budget-pacing-header">
     <div>
       <h2 class="chart-title">Фраза не дала продаж в проекте</h2>
-      <p class="muted">Одна строка — одна фраза в одном проекте. За этот период она потратила там от {{ min_spend }} ₽ и не принесла ни одной конверсии. «Нигде» — продаж не было ни в одном проекте. «Есть продажи» — в других проектах фраза работает, минусовать её только здесь.</p>
+      <p class="muted">Все фразы и автотаргетинг по всем проектам{% if min_spend != '0' %} с расходом от {{ min_spend }} ₽{% endif %}, где за период не было ни одной продажи. Сначала самые дорогие. «Нигде» — продаж не было ни в одном проекте. «Есть продажи» — в других проектах фраза работает, минусовать её только здесь.</p>
     </div>
   </div>
   {% if report.misses %}
@@ -246,7 +246,7 @@
       <input type="search" id="allSearch" placeholder="суши, доставка…">
     </label>
     <label>Расход от, ₽
-      <input type="search" inputmode="decimal" id="allMinSpend" value="100">
+      <input type="search" inputmode="decimal" id="allMinSpend" value="0">
     </label>
     <label class="checkbox">
       <input type="checkbox" id="allOnlyConv"> Только с конверсиями

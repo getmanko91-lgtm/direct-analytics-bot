@@ -42,8 +42,10 @@ def parse_cabinet_keywords(
         if not is_kpi_campaign(row.get("CampaignName") or ""):
             continue
         raw = " ".join((row.get("Criterion") or "").split())
-        if not raw or raw == "—" or raw.startswith("---"):
+        if not raw or raw == "—":
             continue
+        if raw.startswith("---"):
+            raw = "Автотаргетинг"
         key = raw.casefold()
         labels.setdefault(key, raw)
         bucket = totals.setdefault(key, [0.0, 0.0, 0.0, 0.0])
@@ -82,7 +84,7 @@ def keyword_project_misses(report: RsyaNetworkReport, min_spend: float) -> tuple
     misses: list[KeywordMiss] = []
     for item in report.all_placements:
         for share in item.cabinets:
-            if share.conversions > 0 or share.spend < min_spend:
+            if share.conversions > 0 or share.spend <= 0 or share.spend < min_spend:
                 continue
             misses.append(
                 KeywordMiss(
@@ -95,7 +97,7 @@ def keyword_project_misses(report: RsyaNetworkReport, min_spend: float) -> tuple
                     conversions_elsewhere=item.conversions,
                 )
             )
-    misses.sort(key=lambda row: (row.project, -row.spend))
+    misses.sort(key=lambda row: (-row.spend, row.project, row.keyword))
     return tuple(misses)
 
 
@@ -184,6 +186,7 @@ def _job_key(settings: Settings, refs: list[CabinetRef], date_from: date, date_t
         settings.yandex_token,
         date_from.isoformat(),
         date_to.isoformat(),
+        "kw-v2",
         tuple((ref.client_id, ref.goal_ids, ref.attribution_model) for ref in refs),
     )
 

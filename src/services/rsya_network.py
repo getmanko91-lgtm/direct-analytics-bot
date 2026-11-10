@@ -220,7 +220,7 @@ def build_network_report(
         )
         all_placements.append(placement)
         if conversions <= 0:
-            if spend >= min_spend:
+            if spend > 0 and spend >= min_spend:
                 dead.append(placement)
             continue
         network_cpa = spend / conversions
@@ -232,7 +232,7 @@ def build_network_report(
                 )
             )
         for share in shares:
-            if share.conversions <= 0 and share.spend >= min_spend:
+            if share.conversions <= 0 and share.spend > 0 and share.spend >= min_spend:
                 partial.append(
                     PartialWaste(
                         placement=name,
