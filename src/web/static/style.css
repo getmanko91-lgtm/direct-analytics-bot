@@ -800,6 +800,18 @@ code {
   font: inherit;
 }
 
+.keywords-dead-table td {
+  white-space: normal;
+}
+
+.keywords-dead-table .placement-name {
+  word-break: break-word;
+}
+
+.keywords-dead-table td.rsya-projects div + div {
+  margin-top: 0.2rem;
+}
+
 .analytics-table td.rsya-projects {
   white-space: normal;
   min-width: 12rem;

@@ -103,7 +103,7 @@
   <div class="budget-pacing-header">
     <div>
       <h2 class="chart-title">Ни одной конверсии ни в одном кабинете</h2>
-      <p class="muted">Суммарный расход по всем кабинетам от {{ min_spend }} ₽, конверсий 0 ни в одном проекте. Кандидаты на минус-фразы.</p>
+      <p class="muted">Суммарный расход по всем кабинетам от {{ min_spend }} ₽ и ни одной конверсии. Рядом с фразой — кабинеты, в которых она крутилась и не дала продаж.</p>
     </div>
     {% if report.dead_count %}
     <span class="pace-badge pace-over">{{ report.total_dead_spend }} ₽</span>
@@ -112,39 +112,28 @@
 
   {% if report.dead %}
   <div class="table-wrap">
-    <table class="table analytics-table placements-table">
+    <table class="table analytics-table placements-table keywords-dead-table">
       <thead>
         <tr>
           <th>Ключевик</th>
+          <th>Кабинеты без конверсий</th>
           <th>Расход, ₽</th>
           <th>Клики</th>
           <th>CPC, ₽</th>
-          <th>Конверсии</th>
-          <th>CPA, ₽</th>
-          <th>Показы</th>
-          <th>Кабинеты</th>
         </tr>
       </thead>
       <tbody>
         {% for row in report.dead %}
         <tr>
           <td><code class="placement-name">{{ row.placement }}</code></td>
+          <td class="rsya-projects">
+            {% for share in row.cabinets %}
+            <div>{{ share.client_name }} — {{ share.spend }} ₽, {{ share.clicks }} кл.</div>
+            {% endfor %}
+          </td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
           <td>{{ row.cpc }}</td>
-          <td>0</td>
-          <td class="cpa-high">нет конверсий</td>
-          <td>{{ row.impressions }}</td>
-          <td>
-            <details class="rsya-cabinets">
-              <summary>{{ row.cabinets_count }}: {{ row.cabinets[0].client_name }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
-              <ul>
-                {% for share in row.cabinets %}
-                <li>{{ share.client_name }} ({{ share.directologist }}) — {{ share.spend }} ₽, {{ share.clicks }} кл., CPC {{ share.cpc }} ₽</li>
-                {% endfor %}
-              </ul>
-            </details>
-          </td>
         </tr>
         {% endfor %}
       </tbody>
