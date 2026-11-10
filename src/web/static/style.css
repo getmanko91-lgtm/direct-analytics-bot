@@ -901,6 +901,48 @@ code {
   min-width: 0;
 }
 
+.ad-texts-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.ad-texts-table th:nth-child(1) { width: 32%; }
+.ad-texts-table th:nth-child(2),
+.ad-texts-table th:nth-child(5) { width: 10%; }
+.ad-texts-table th:nth-child(3),
+.ad-texts-table th:nth-child(4) { width: 12%; }
+.ad-texts-table th:nth-child(6) { width: 24%; }
+
+.ad-texts-table th,
+.ad-texts-table td {
+  white-space: nowrap;
+}
+
+.ad-texts-table th:nth-child(1),
+.ad-texts-table td:nth-child(1),
+.ad-texts-table th:nth-child(6),
+.ad-texts-table td:nth-child(6) {
+  white-space: normal;
+}
+
+.ad-texts-table td.rsya-projects {
+  min-width: 0;
+}
+
+.ad-texts-table td.rsya-projects div + div {
+  margin-top: 0.2rem;
+}
+
+.ad-text-title {
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.ad-text-body {
+  margin-top: 0.2rem;
+  word-break: break-word;
+}
+
 .btn-nowrap {
   white-space: nowrap;
 }

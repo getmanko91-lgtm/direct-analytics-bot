@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Лучшие тексты{% endblock %}
+{% block head %}
+{% if running %}<meta http-equiv="refresh" content="5">{% endif %}
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Лучшие тексты</h1>
+    <p class="muted">Все кабинеты за {{ date_from.strftime('%d.%m.%Y') }}{% if date_from != date_to %} — {{ date_to.strftime('%d.%m.%Y') }}{% endif %}. Как на странице KPI: только кампании «КОНВЕР», «КОНВЕРС», «МК», «ЕПК», «ТМК» и цели, отмеченные у клиента. Одинаковый текст в разных проектах сложен. С НДС.</p>
+  </div>
+</div>
+
+<div class="card filters-card">
+  <form method="get" class="filters-form">
+    <label>Дата с
+      <input type="date" name="date_from" value="{{ date_from.isoformat() }}" required>
+    </label>
+    <label>Дата по
+      <input type="date" name="date_to" value="{{ date_to.isoformat() }}" required>
+    </label>
+    <button type="submit" class="btn btn-primary">Показать</button>
+  </form>
+  <div class="quick-filters">
+    <span class="muted">Период:</span>
+    {% for key, label in presets.items() %}
+    <a href="/ad-texts?period={{ key }}" class="btn btn-sm {% if preset == key %}btn-primary{% else %}btn-secondary{% endif %}">{{ label }}</a>
+    {% endfor %}
+    {% if report %}
+    <a href="/ad-texts?{{ query | urlencode }}&refresh=1" class="btn btn-secondary btn-sm">Обновить из Директа</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{% if without_goals %}
+<div class="alert alert-warning">Не учтены — не выбраны цели: {{ without_goals | join(', ') }}.</div>
+{% endif %}
+
+{% if running %}
+<div class="card">
+  <h2 class="chart-title">Собираю тексты из Директа…</h2>
+  <p>Готово кабинетов: {{ progress_done }} из {{ progress_total }}. Страница обновится сама.</p>
+  <p class="muted">За несколько месяцев Директ готовит отчёты в очереди — это может занять пару минут. Результат хранится 6 часов.</p>
+</div>
+{% elif report %}
+
+{% if report.errors %}
+<div class="alert alert-warning">
+  {% for name, err in report.errors %}<div><strong>{{ name }}</strong> — {{ err }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <span class="summary-label">Текстов с продажами</span>
+    <strong class="summary-value">{{ report.texts_with_sales }}</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Продажи, все тексты</span>
+    <strong class="summary-value">{{ report.total_conversions }}</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Расход на тексты</span>
+    <strong class="summary-value">{{ report.total_spend }} ₽</strong>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Лучший CPA</span>
+    <strong class="summary-value">{% if report.best_cpa %}{{ report.best_cpa.cpa }} ₽{% else %}—{% endif %}</strong>
+    {% if report.best_cpa %}<span class="muted">{{ report.best_cpa.conversions }} конв.</span>{% endif %}
+  </div>
+</div>
+
+<div class="card placements-card" id="ad-texts">
+  <div class="budget-pacing-header">
+    <div>
+      <h2 class="chart-title">Тексты по числу конверсий</h2>
+      <p class="muted">Сначала тексты, которые принесли больше всего продаж по всем клиентам. CPA — общий расход на этот текст ÷ все его конверсии. Рядом проекты, где текст дал продажи.</p>
+    </div>
+    <a href="/ad-texts.csv?{{ query | urlencode }}" class="btn btn-secondary btn-sm btn-nowrap">Скачать CSV</a>
+  </div>
+  <div class="rsya-all-filters">
+    <label>Поиск текста
+      <input type="search" id="textSearch" placeholder="суши, доставка…">
+    </label>
+    <label>Конверсий от
+      <input type="search" inputmode="decimal" id="textMinConv" value="1">
+    </label>
+    <span class="muted" id="textCount">{{ report.texts | length }} текстов</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table analytics-table placements-table ad-texts-table">
+      <thead>
+        <tr>
+          <th>Текст</th>
+          <th>Конверсии</th>
+          <th>CPA, ₽</th>
+          <th>Расход, ₽</th>
+          <th>Клики</th>
+          <th>Проекты</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.texts %}
+        <tr data-text="{{ row.search }}" data-conv="{{ row.conversions_value }}">
+          <td>
+            <div class="ad-text-title">{{ row.title }}</div>
+            {% if row.body %}<div class="muted ad-text-body">{{ row.body }}</div>{% endif %}
+            {% if row.best_conversions %}<span class="pace-badge pace-ok">больше всего продаж</span>{% endif %}
+            {% if row.best_cpa %}<span class="pace-badge pace-under">лучший CPA</span>{% endif %}
+          </td>
+          <td>{{ row.conversions }}</td>
+          <td class="{{ row.cpa_class }}">{% if row.cpa == '—' %}нет конверсий{% else %}{{ row.cpa }}{% endif %}</td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td class="rsya-projects">
+            {% for share in row.cabinets %}
+            <div>{{ share.client_name }} — {% if share.conversions_value > 0 %}{{ share.conversions }} конв.{% if share.cpa != '—' %}, CPA {{ share.cpa }} ₽{% endif %}{% else %}0 конв., {{ share.spend }} ₽{% endif %}</div>
+            {% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">Нет объявлений за период</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  const search = document.getElementById('textSearch');
+  const minConv = document.getElementById('textMinConv');
+  const count = document.getElementById('textCount');
+  if (!search || !minConv || !count) return;
+  const rows = Array.from(document.querySelectorAll('.ad-texts-table tbody tr[data-text]'));
+  function apply() {
+    const query = search.value.trim().toLowerCase();
+    const threshold = Number(minConv.value.replace(',', '.')) || 0;
+    let visible = 0;
+    rows.forEach(function (row) {
+      const show = (!query || row.dataset.text.includes(query)) && Number(row.dataset.conv) >= threshold;
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    count.textContent = visible + ' из ' + rows.length + ' текстов';
+  }
+  search.addEventListener('input', apply);
+  minConv.addEventListener('input', apply);
+  apply();
+})();
+</script>
+{% endblock %}

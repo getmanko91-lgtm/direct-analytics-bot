@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 REPORTS_URL = "https://api.direct.yandex.com/json/v5/reports"
 CAMPAIGNS_URL = "https://api.direct.yandex.com/json/v5/campaigns"
 STRATEGIES_URL = "https://api.direct.yandex.com/json/v5/strategies"
+ADS_URL = "https://api.direct.yandex.com/json/v5/ads"
 LIVE_V4_URL = "https://api.direct.yandex.com/live/v4/json/"
 METRIKA_GOALS_URL = "https://api-metrika.yandex.net/management/v1/counter/{counter_id}/goals"
 
@@ -579,6 +580,104 @@ class YandexDirectClient:
                 else:
                     _merge_conversion_columns(merged[key], row, list(chunk))
         return list(merged.values())
+
+    def fetch_ad_performance_report(
+        self,
+        date_from: date,
+        date_to: date,
+        goal_ids: list[int],
+        attribution_model: str,
+    ) -> list[dict[str, str]]:
+        """Статистика объявлений на поиске и в РСЯ, без разбивки по дням."""
+        field_names = ["CampaignName", "AdId", "Cost", "Clicks", "Impressions", "Conversions", "CostPerConversion"]
+        if not goal_ids:
+            return self._fetch_report_ex(
+                date_from,
+                date_to,
+                [],
+                attribution_model,
+                report_type="AD_PERFORMANCE_REPORT",
+                field_names=field_names,
+                report_name_prefix="AdTexts",
+            )
+
+        merged: dict[str, dict[str, str]] = {}
+        for chunk in _chunked(goal_ids, MAX_GOALS_PER_REQUEST):
+            rows = self._fetch_report_ex(
+                date_from,
+                date_to,
+                list(chunk),
+                attribution_model,
+                report_type="AD_PERFORMANCE_REPORT",
+                field_names=field_names,
+                report_name_prefix="AdTexts",
+            )
+            for row in rows:
+                key = row.get("AdId", "").strip()
+                if key not in merged:
+                    merged[key] = dict(row)
+                else:
+                    _merge_conversion_columns(merged[key], row, list(chunk))
+        return list(merged.values())
+
+    def fetch_ads(self, ad_ids: list[int]) -> list[dict]:
+        """Тексты объявлений: заголовок и текст. Объявление без текста просто не попадёт в ответ."""
+        unique = list(dict.fromkeys(ad_id for ad_id in ad_ids if ad_id))
+        if not unique:
+            return []
+        field_sets = (
+            {
+                "TextAdFieldNames": ["Title", "Title2", "Text"],
+                "MobileAppAdFieldNames": ["Title", "Text"],
+                "DynamicTextAdFieldNames": ["Text"],
+                "ResponsiveAdFieldNames": ["Titles", "Texts"],
+            },
+            {
+                "TextAdFieldNames": ["Title", "Title2", "Text"],
+                "MobileAppAdFieldNames": ["Title", "Text"],
+                "DynamicTextAdFieldNames": ["Text"],
+            },
+            {"TextAdFieldNames": ["Title", "Title2", "Text"]},
+        )
+        found: list[dict] = []
+        chosen: dict[str, list[str]] | None = None
+        last_error: YandexDirectError | None = None
+        for chunk in _chunked(unique, 1000):
+            ads: list[dict] | None = None
+            candidates = (chosen,) if chosen is not None else field_sets
+            for extra in candidates:
+                try:
+                    ads = self._fetch_ad_pages(list(chunk), extra)
+                    chosen = extra
+                    break
+                except YandexDirectError as exc:
+                    last_error = exc
+                    chosen = None
+            if ads is None:
+                if last_error:
+                    raise last_error
+                return found
+            found.extend(ads)
+        return found
+
+    def _fetch_ad_pages(self, ad_ids: list[int], extra_fields: dict[str, list[str]]) -> list[dict]:
+        ads: list[dict] = []
+        offset = 0
+        while True:
+            params: dict = {
+                "SelectionCriteria": {"Ids": ad_ids},
+                "FieldNames": ["Id", "Type"],
+                "Page": {"Limit": 10000, "Offset": offset},
+            }
+            params.update(extra_fields)
+            result = self._post_json(ADS_URL, {"method": "get", "params": params})
+            batch = result.get("result", {}).get("Ads", [])
+            ads.extend(batch)
+            limited = result.get("result", {}).get("LimitedBy")
+            if not limited or not batch:
+                break
+            offset = int(limited)
+        return ads
 
     def _fetch_report(
         self,

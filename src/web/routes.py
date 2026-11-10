@@ -41,6 +41,12 @@ from src.services.message_delivery import (
     send_telegram_test,
 )
 from src.services.report_runner import run_all_reports, run_client_report
+from src.services.ad_texts import (
+    best_text_labels,
+    build_ad_texts_report,
+    format_ad_texts_csv,
+    get_ad_texts_job,
+)
 from src.services.campaign_types import (
     best_labels,
     build_campaign_types_report,
@@ -898,6 +904,108 @@ def campaign_types_page(
         "best_payment": _winner(by_payment, "best_conversions"),
     }
     return templates.TemplateResponse(request, "campaign_types.html", context)
+
+
+@router.get("/ad-texts", response_class=HTMLResponse)
+def ad_texts_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    params = request.query_params
+    date_from, date_to, preset = _rsya_period(params)
+    refs, without_goals = cabinet_refs(db)
+    job = get_ad_texts_job(settings, refs, date_from, date_to, force=params.get("refresh") == "1")
+    context: dict = {
+        "user": user,
+        "date_from": date_from,
+        "date_to": date_to,
+        "preset": preset,
+        "presets": RSYA_PRESETS,
+        "query": (
+            {"period": preset}
+            if preset
+            else {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()}
+        ),
+        "without_goals": without_goals,
+        "running": job.running,
+        "progress_done": job.done,
+        "progress_total": job.total,
+        "message": params.get("message"),
+        "error": params.get("error"),
+        "report": None,
+    }
+    if job.running:
+        return templates.TemplateResponse(request, "ad_texts.html", context)
+
+    report = build_ad_texts_report(job.cabinets, date_from, date_to)
+    best_conversions, best_cpa = best_text_labels(report)
+    context["report"] = {
+        "texts_with_sales": report.texts_with_sales,
+        "total_conversions": _fmt_conv_count(report.total_conversions),
+        "total_spend": _fmt_money(report.total_spend),
+        "errors": report.errors,
+        "best_cpa": None
+        if best_cpa is None
+        else {
+            "cpa": _fmt_cost(best_cpa.cpa),
+            "conversions": _fmt_conv_count(best_cpa.conversions),
+        },
+        "texts": [
+            {
+                "title": item.title,
+                "body": item.body,
+                "search": item.label.casefold(),
+                "conversions": _fmt_conv_count(item.conversions),
+                "conversions_value": item.conversions,
+                "spend": _fmt_money(item.spend),
+                "clicks": _fmt_int(item.clicks),
+                "cpa": _fmt_cost(item.cpa),
+                "cpa_class": cpa_highlight_class(item.cpa) if item.cpa is not None else "cpa-high",
+                "best_conversions": item is best_conversions,
+                "best_cpa": item is best_cpa,
+                "cabinets": [
+                    {
+                        "client_name": share.client_name,
+                        "conversions": _fmt_conv_count(share.conversions),
+                        "conversions_value": share.conversions,
+                        "cpa": _fmt_cost(share.cpa),
+                        "spend": _fmt_money(share.spend),
+                    }
+                    for share in item.cabinets
+                ],
+            }
+            for item in report.texts
+        ],
+    }
+    return templates.TemplateResponse(request, "ad_texts.html", context)
+
+
+@router.get("/ad-texts.csv")
+def ad_texts_csv(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    params = request.query_params
+    date_from, date_to, preset = _rsya_period(params)
+    refs, _ = cabinet_refs(db)
+    job = get_ad_texts_job(settings, refs, date_from, date_to)
+    query = {"period": preset} if preset else {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()}
+    if job.running:
+        return RedirectResponse(
+            redirect_url("/ad-texts", error="Данные ещё собираются — скачайте после загрузки", **query),
+            status_code=303,
+        )
+    report = build_ad_texts_report(job.cabinets, date_from, date_to)
+    filename = f"ad-texts_{date_from.isoformat()}_{date_to.isoformat()}.csv"
+    return Response(
+        content=format_ad_texts_csv(report).encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def _client_reports_period(request: Request) -> tuple[date, date]:
