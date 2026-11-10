@@ -818,6 +818,8 @@ code {
   white-space: nowrap;
 }
 
+.keywords-miss-table th:nth-child(1),
+.keywords-miss-table td:nth-child(1),
 .keywords-miss-table th:nth-child(3),
 .keywords-miss-table td:nth-child(3),
 .keywords-miss-table th:nth-child(6),
