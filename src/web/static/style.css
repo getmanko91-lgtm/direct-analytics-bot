@@ -808,8 +808,16 @@ code {
   word-break: break-word;
 }
 
+.keywords-dead-table td.rsya-projects div {
+  white-space: nowrap;
+}
+
 .keywords-dead-table td.rsya-projects div + div {
   margin-top: 0.2rem;
+}
+
+.keywords-dead-table td:nth-child(n + 3) {
+  white-space: nowrap;
 }
 
 .analytics-table td.rsya-projects {
