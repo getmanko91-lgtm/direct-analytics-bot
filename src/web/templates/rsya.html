@@ -286,9 +286,88 @@
   <p class="muted">Таких площадок нет.</p>
   {% endif %}
 </div>
+
+<div class="card placements-card" id="all-placements">
+  <div class="budget-pacing-header">
+    <div>
+      <h2 class="chart-title">Все площадки</h2>
+      <p class="muted">Все площадки РСЯ из всех кабинетов за период. Стоимость конверсии — общий расход на площадку по всем кабинетам ÷ все её конверсии. Справа — в каких проектах по площадке нет конверсий и где они есть.</p>
+    </div>
+    <a href="/rsya/all.csv?{{ query | urlencode }}" class="btn btn-secondary btn-sm">Скачать CSV</a>
+  </div>
+  <div class="rsya-all-filters">
+    <label>Поиск площадки
+      <input type="search" id="allSearch" placeholder="avito, mahjong…">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" id="allOnlyZero"> Только где есть проекты без конверсий
+    </label>
+    <span class="muted" id="allCount">{{ report.all | length }} площадок</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table analytics-table placements-table rsya-all-table">
+      <thead>
+        <tr>
+          <th>Площадка</th>
+          <th>Расход, ₽</th>
+          <th>Клики</th>
+          <th>CPC, ₽</th>
+          <th>Конверсии</th>
+          <th>CPA по всем кабинетам, ₽</th>
+          <th>Проекты без конверсий</th>
+          <th>Проекты с конверсиями</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.all %}
+        <tr data-placement="{{ row.placement | lower }}" data-zero="{{ row.zero | length }}">
+          <td><code class="placement-name">{{ row.placement }}</code></td>
+          <td>{{ row.spend }}</td>
+          <td>{{ row.clicks }}</td>
+          <td>{{ row.cpc }}</td>
+          <td>{{ row.conversions }}</td>
+          <td class="{{ row.cpa_class }}">{% if row.cpa == '—' %}нет конверсий{% else %}{{ row.cpa }}{% endif %}</td>
+          <td class="rsya-projects">
+            {% if row.zero %}
+            <strong>{{ row.zero | length }} из {{ row.cabinets_count }}</strong>
+            {% for share in row.zero %}<br>{{ share.client_name }} — {{ share.spend }} ₽{% endfor %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="rsya-projects">
+            {% for share in row.converting %}{% if not loop.first %}<br>{% endif %}{{ share.client_name }} — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽{% else %}—{% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="muted">Нет данных</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endif %}
 
 <script>
+(function () {
+  const search = document.getElementById('allSearch');
+  const onlyZero = document.getElementById('allOnlyZero');
+  const count = document.getElementById('allCount');
+  if (!search || !onlyZero) return;
+  const rows = Array.from(document.querySelectorAll('.rsya-all-table tbody tr[data-placement]'));
+  function apply() {
+    const query = search.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(function (row) {
+      const show = (!query || row.dataset.placement.includes(query))
+        && (!onlyZero.checked || Number(row.dataset.zero) > 0);
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    count.textContent = visible + ' из ' + rows.length + ' площадок';
+  }
+  search.addEventListener('input', apply);
+  onlyZero.addEventListener('change', apply);
+})();
+
 function copyPlacements() {
   const area = document.getElementById('placementList');
   const status = document.getElementById('copyStatus');

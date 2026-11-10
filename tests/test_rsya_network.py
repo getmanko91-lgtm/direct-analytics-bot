@@ -5,6 +5,7 @@ from src.services.rsya_network import (
     CabinetRef,
     PlacementStat,
     build_network_report,
+    format_all_placements_csv,
     format_network_telegram,
     parse_cabinet_placements,
 )
@@ -86,6 +87,28 @@ def test_good_placements_need_min_conversions_and_cpa_not_above_average():
     assert abs(star.cpc - 10) < 0.01
     assert [share.client_name for share in star.cabinets] == ["Япошка", "Гринпарк"]
     assert abs(star.cabinets[1].cpa - 150) < 0.01
+
+
+def test_all_placements_include_every_placement_sorted_by_spend():
+    cabinets = [
+        CabinetPlacements(
+            _ref(1, "Япошка"),
+            {"small.ru": _stat(50), "good.ru": _stat(900, conversions=3)},
+        ),
+        CabinetPlacements(_ref(2, "Гринпарк"), {"good.ru": _stat(300)}),
+    ]
+    report = build_network_report(cabinets, date(2026, 10, 1), date(2026, 10, 31), min_spend=600)
+
+    assert [item.placement for item in report.all_placements] == ["good.ru", "small.ru"]
+    good = report.all_placements[0]
+    assert abs(good.cpa - 400) < 0.01
+    assert [share.client_name for share in good.cabinets if share.conversions <= 0] == ["Гринпарк"]
+
+    csv_text = format_all_placements_csv(report)
+    lines = csv_text.strip().splitlines()
+    assert lines[0].startswith("Площадка;Расход, ₽")
+    assert "good.ru;1 200,00;20;60,00;3;400,00;2;Гринпарк (300,00 ₽);Япошка (3 конв., CPA 300,00 ₽)" in csv_text
+    assert lines[2].startswith("small.ru;50,00;10;5,00;0;—;1;Япошка (50,00 ₽);")
 
 
 def test_threshold_and_errors():

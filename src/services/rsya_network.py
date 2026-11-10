@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from sqlalchemy.orm import Session, joinedload
@@ -117,6 +119,7 @@ class RsyaNetworkReport:
     total_dead_spend: float
     cabinets_total: int
     good: tuple[NetworkPlacement, ...] = ()
+    all_placements: tuple[NetworkPlacement, ...] = ()
     total_rsya_conversions: float = 0.0
     good_min_conversions: float = DEFAULT_GOOD_MIN_CONVERSIONS
 
@@ -181,6 +184,7 @@ def build_network_report(
 
     dead: list[NetworkPlacement] = []
     good: list[NetworkPlacement] = []
+    all_placements: list[NetworkPlacement] = []
     partial: list[PartialWaste] = []
     for name, entries in by_placement.items():
         shares = tuple(
@@ -202,28 +206,24 @@ def build_network_report(
         )
         spend = sum(share.spend for share in shares)
         conversions = sum(share.conversions for share in shares)
+        placement = NetworkPlacement(
+            placement=name,
+            spend=spend,
+            clicks=sum(stat.clicks for _, stat in entries),
+            impressions=sum(stat.impressions for _, stat in entries),
+            conversions=conversions,
+            cabinets=shares,
+        )
+        all_placements.append(placement)
         if conversions <= 0:
             if spend >= min_spend:
-                dead.append(
-                    NetworkPlacement(
-                        placement=name,
-                        spend=spend,
-                        clicks=sum(stat.clicks for _, stat in entries),
-                        impressions=sum(stat.impressions for _, stat in entries),
-                        conversions=0.0,
-                        cabinets=shares,
-                    )
-                )
+                dead.append(placement)
             continue
         network_cpa = spend / conversions
         if conversions >= good_min_conversions and avg_cpa is not None and network_cpa <= avg_cpa:
             good.append(
-                NetworkPlacement(
-                    placement=name,
-                    spend=spend,
-                    clicks=sum(stat.clicks for _, stat in entries),
-                    impressions=sum(stat.impressions for _, stat in entries),
-                    conversions=conversions,
+                replace(
+                    placement,
                     cabinets=tuple(sorted(shares, key=lambda share: share.conversions, reverse=True)),
                 )
             )
@@ -239,6 +239,7 @@ def build_network_report(
                 )
 
     dead.sort(key=lambda item: item.spend, reverse=True)
+    all_placements.sort(key=lambda item: item.spend, reverse=True)
     good.sort(key=lambda item: (-item.conversions, item.cpa or 0))
     partial.sort(key=lambda item: item.cabinet.spend, reverse=True)
 
@@ -280,6 +281,7 @@ def build_network_report(
         total_dead_spend=sum(item.spend for item in dead),
         cabinets_total=len(cabinets),
         good=tuple(good),
+        all_placements=tuple(all_placements),
         total_rsya_conversions=total_conversions,
         good_min_conversions=good_min_conversions,
     )
@@ -410,6 +412,48 @@ def _fmt_cost(value: float | None) -> str:
 
 def _fmt_conv(value: float) -> str:
     return f"{value:g}".replace(".", ",")
+
+
+def format_all_placements_csv(report: RsyaNetworkReport) -> str:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";")
+    writer.writerow(
+        [
+            "Площадка",
+            "Расход, ₽",
+            "Клики",
+            "CPC, ₽",
+            "Конверсии",
+            "CPA по всем кабинетам, ₽",
+            "Кабинетов",
+            "Проекты без конверсий",
+            "Проекты с конверсиями",
+        ]
+    )
+    for item in report.all_placements:
+        zero = [share for share in item.cabinets if share.conversions <= 0]
+        converting = sorted(
+            (share for share in item.cabinets if share.conversions > 0),
+            key=lambda share: share.conversions,
+            reverse=True,
+        )
+        writer.writerow(
+            [
+                item.placement,
+                _fmt_cost(item.spend),
+                item.clicks,
+                _fmt_cost(item.cpc),
+                _fmt_conv(item.conversions),
+                _fmt_cost(item.cpa),
+                len(item.cabinets),
+                ", ".join(f"{share.client_name} ({_fmt_cost(share.spend)} ₽)" for share in zero),
+                ", ".join(
+                    f"{share.client_name} ({_fmt_conv(share.conversions)} конв., CPA {_fmt_cost(share.cpa)} ₽)"
+                    for share in converting
+                ),
+            ]
+        )
+    return buffer.getvalue()
 
 
 def format_network_telegram(report: RsyaNetworkReport, *, limit: int = 25, good_limit: int = 10) -> str:

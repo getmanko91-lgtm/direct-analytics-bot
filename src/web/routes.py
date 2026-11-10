@@ -46,6 +46,7 @@ from src.services.rsya_network import (
     DEFAULT_MIN_SPEND as DEFAULT_RSYA_MIN_SPEND,
     build_network_report,
     cabinet_refs,
+    format_all_placements_csv,
     format_network_telegram,
     get_network_job,
 )
@@ -538,6 +539,33 @@ def rsya_network_page(
         "errors": report.errors,
         "dead": [_placement_row(item) for item in report.dead],
         "good": [_placement_row(item) for item in report.good],
+        "all": [
+            {
+                "placement": item.placement,
+                "spend": _fmt_money(item.spend),
+                "clicks": _fmt_int(item.clicks),
+                "cpc": _fmt_cost(item.cpc),
+                "conversions": _fmt_conv_count(item.conversions),
+                "cpa": _fmt_cost(item.cpa),
+                "cpa_class": cpa_highlight_class(item.cpa) if item.cpa is not None else "cpa-high",
+                "cabinets_count": len(item.cabinets),
+                "zero": [
+                    {"client_name": share.client_name, "spend": _fmt_money(share.spend)}
+                    for share in item.cabinets
+                    if share.conversions <= 0
+                ],
+                "converting": [
+                    {
+                        "client_name": share.client_name,
+                        "conversions": _fmt_conv_count(share.conversions),
+                        "cpa": _fmt_cost(share.cpa),
+                    }
+                    for share in sorted(item.cabinets, key=lambda s: s.conversions, reverse=True)
+                    if share.conversions > 0
+                ],
+            }
+            for item in report.all_placements
+        ],
         "partial": [
             {
                 "placement": item.placement,
@@ -567,6 +595,40 @@ def rsya_network_page(
         "placement_names_text": "\n".join(item.placement for item in report.dead),
     }
     return templates.TemplateResponse(request, "rsya.html", context)
+
+
+@router.get("/rsya/all.csv")
+def rsya_network_csv(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings_dep(request)
+    params = request.query_params
+    date_from, date_to, preset = _rsya_period(params)
+    min_spend = _rsya_min_spend(params.get("min_spend"))
+    min_conv = _rsya_min_conversions(params.get("min_conv"))
+    refs, _ = cabinet_refs(db)
+    job = get_network_job(settings, refs, date_from, date_to)
+    if job.running:
+        query = _rsya_query(date_from, date_to, preset, min_spend, min_conv)
+        return RedirectResponse(
+            redirect_url("/rsya", error="Данные ещё собираются — скачайте после загрузки", **query),
+            status_code=303,
+        )
+    report = build_network_report(
+        job.cabinets,
+        date_from,
+        date_to,
+        min_spend=min_spend,
+        good_min_conversions=min_conv,
+    )
+    filename = f"rsya_placements_{date_from.isoformat()}_{date_to.isoformat()}.csv"
+    return Response(
+        content=format_all_placements_csv(report).encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/rsya/send")
