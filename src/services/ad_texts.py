@@ -113,6 +113,7 @@ class AdStat:
     clicks: int
     impressions: int
     conversions: float
+    deleted: bool = False
 
 
 @dataclass(frozen=True)
@@ -203,7 +204,7 @@ def build_ad_texts_report(
             key = text_identity(ad.title, ad.body, ad.ad_id)
             bucket = buckets.setdefault(
                 key,
-                {"title": ad.title, "body": ad.body, "shares": {}},
+                {"title": ad.title, "body": ad.body, "deleted": ad.deleted, "shares": {}},
             )
             if not bucket["title"] and not bucket["body"] and (ad.title or ad.body):
                 bucket["title"] = ad.title
@@ -236,7 +237,12 @@ def build_ad_texts_report(
             for raw in bucket["shares"].values()
         )
         shares = tuple(sorted(shares, key=lambda share: (-share.conversions, -share.spend)))
-        title = bucket["title"] or ("" if bucket["body"] else MISSING_TEXT)
+        if bucket["title"] or bucket["body"]:
+            title = bucket["title"]
+        elif bucket["deleted"]:
+            title = "Объявление удалено"
+        else:
+            title = MISSING_TEXT
         ranked.append(
             RankedText(
                 title=title,
@@ -303,11 +309,17 @@ def _load_cabinet(settings: Settings, ref: CabinetRef, date_from: date, date_to:
         try:
             raw_ads, copy_error = api.fetch_ads(list(ads))
             apply_ad_copies(ads, raw_ads)
-            filled = sum(1 for ad in ads.values() if ad.title or ad.body)
-            if filled < len(ads) or copy_error:
-                text_error = f"тексты нашлись у {filled} из {len(ads)}"
-                if copy_error:
-                    text_error = f"{text_error}. {copy_error}"
+            returned: set[int] = set()
+            for raw in raw_ads:
+                raw_id = raw.get("Id")
+                returned_id = raw_id if isinstance(raw_id, int) else _parse_int(str(raw_id or ""))
+                if returned_id:
+                    returned.add(returned_id)
+            for ad in ads.values():
+                if not ad.title and not ad.body and ad.ad_id not in returned:
+                    ad.deleted = True
+            if copy_error and not any(ad.title or ad.body for ad in ads.values()):
+                text_error = copy_error
         except Exception as exc:
             logger.warning("Тексты объявлений кабинета %s: %s", ref.client_name, exc)
             text_error = str(exc)[:300]

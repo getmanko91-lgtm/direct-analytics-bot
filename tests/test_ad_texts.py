@@ -56,24 +56,25 @@ def test_texts_are_ranked_across_cabinets_by_conversions():
     sushi = AdStat(1, "Суши", "за 30 минут", spend=1000, clicks=20, impressions=200, conversions=5)
     other = AdStat(2, "Пицца", "бесплатная доставка", spend=400, clicks=8, impressions=80, conversions=1)
     same = AdStat(3, "суши", "за 30 минут", spend=500, clicks=10, impressions=90, conversions=4)
-    missing = AdStat(4, "", "", spend=50, clicks=1, impressions=10, conversions=0)
+    missing = AdStat(4, "", "", spend=50, clicks=1, impressions=10, conversions=0, deleted=True)
+    also_deleted = AdStat(8, "", "", spend=80, clicks=2, impressions=12, conversions=2, deleted=True)
     report = build_ad_texts_report(
         [
             CabinetAds(cabinet=_ref(1, "Япошка"), ads=[sushi, other]),
-            CabinetAds(cabinet=_ref(2, "Гринпарк"), ads=[same, missing]),
+            CabinetAds(cabinet=_ref(2, "Гринпарк"), ads=[same, missing, also_deleted]),
         ],
         date(2026, 10, 11),
         date(2026, 11, 9),
     )
-    assert [item.label for item in report.texts] == [
-        "Суши — за 30 минут",
-        "Пицца — бесплатная доставка",
-        MISSING_TEXT,
-    ]
+    assert report.texts[0].label == "Суши — за 30 минут"
+    assert "Пицца — бесплатная доставка" in [item.label for item in report.texts]
+    deleted = [item for item in report.texts if item.title == "Объявление удалено"]
+    assert len(deleted) == 2
+    assert {item.conversions for item in deleted} == {0, 2}
     assert report.texts[0].conversions == 9
     assert report.texts[0].spend == 1500
     assert [share.client_name for share in report.texts[0].cabinets] == ["Япошка", "Гринпарк"]
-    assert report.texts_with_sales == 2
+    assert report.texts_with_sales == 3
     best_conversions, best_cpa = best_text_labels(report)
     assert best_conversions is report.texts[0]
     assert best_cpa is report.texts[0]

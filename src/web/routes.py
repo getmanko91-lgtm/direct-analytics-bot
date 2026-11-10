@@ -956,6 +956,7 @@ def ad_texts_page(
             {
                 "title": item.title,
                 "body": item.body,
+                "deleted": item.title == "Объявление удалено" and not item.body,
                 "search": item.label.casefold(),
                 "conversions": _fmt_conv_count(item.conversions),
                 "conversions_value": item.conversions,

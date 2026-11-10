@@ -81,7 +81,7 @@
   <div class="budget-pacing-header">
     <div>
       <h2 class="chart-title">Тексты по числу конверсий</h2>
-      <p class="muted">Сначала тексты, которые принесли больше всего продаж по всем клиентам. CPA — общий расход на этот текст ÷ все его конверсии. Рядом проекты, где текст дал продажи.</p>
+      <p class="muted">Сначала тексты, которые принесли больше всего продаж по всем клиентам. CPA — общий расход на этот текст ÷ все его конверсии. Рядом проекты, где текст дал продажи. Удалённые объявления скрыты: Директ уже не отдаёт их текст, статистика за период остаётся.</p>
     </div>
     <a href="/ad-texts.csv?{{ query | urlencode }}" class="btn btn-secondary btn-sm btn-nowrap">Скачать CSV</a>
   </div>
@@ -91,6 +91,9 @@
     </label>
     <label>Конверсий от
       <input type="search" inputmode="decimal" id="textMinConv" value="1">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" id="textDeleted"> Показывать удалённые
     </label>
     <span class="muted" id="textCount">{{ report.texts | length }} текстов</span>
   </div>
@@ -108,7 +111,7 @@
       </thead>
       <tbody>
         {% for row in report.texts %}
-        <tr data-text="{{ row.search }}" data-conv="{{ row.conversions_value }}">
+        <tr data-text="{{ row.search }}" data-conv="{{ row.conversions_value }}" data-deleted="{{ '1' if row.deleted else '0' }}">
           <td>
             <div class="ad-text-title">{{ row.title }}</div>
             {% if row.body %}<div class="muted ad-text-body">{{ row.body }}</div>{% endif %}
@@ -138,15 +141,18 @@
 (function () {
   const search = document.getElementById('textSearch');
   const minConv = document.getElementById('textMinConv');
+  const deleted = document.getElementById('textDeleted');
   const count = document.getElementById('textCount');
-  if (!search || !minConv || !count) return;
+  if (!search || !minConv || !deleted || !count) return;
   const rows = Array.from(document.querySelectorAll('.ad-texts-table tbody tr[data-text]'));
   function apply() {
     const query = search.value.trim().toLowerCase();
     const threshold = Number(minConv.value.replace(',', '.')) || 0;
     let visible = 0;
     rows.forEach(function (row) {
-      const show = (!query || row.dataset.text.includes(query)) && Number(row.dataset.conv) >= threshold;
+      const show = (!query || row.dataset.text.includes(query))
+        && Number(row.dataset.conv) >= threshold
+        && (deleted.checked || row.dataset.deleted !== '1');
       row.hidden = !show;
       if (show) visible += 1;
     });
@@ -154,6 +160,7 @@
   }
   search.addEventListener('input', apply);
   minConv.addEventListener('input', apply);
+  deleted.addEventListener('change', apply);
   apply();
 })();
 </script>
