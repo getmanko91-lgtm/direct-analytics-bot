@@ -788,27 +788,29 @@ code {
 
 .rsya-fit {
   width: 100%;
-  table-layout: fixed;
-}
-
-.rsya-fit th {
-  white-space: normal;
+  table-layout: auto;
 }
 
 .placements-card .table-wrap {
   overflow-x: visible;
 }
 
-.rsya-fit th:first-child,
-.rsya-fit td:first-child,
-.rsya-fit th:last-child,
-.rsya-fit td:last-child,
-.rsya-fit .placement-name,
+.rsya-fit .placement-name {
+  word-break: normal;
+  white-space: nowrap;
+}
+
+.rsya-fit td:has(.rsya-cabinets),
+.rsya-fit td.rsya-projects {
+  white-space: normal;
+  width: 36%;
+}
+
 .rsya-fit .rsya-cabinets,
 .rsya-fit .rsya-cabinets ul,
 .rsya-fit .rsya-cabinets li {
   white-space: normal;
-  word-break: break-word;
+  word-break: normal;
 }
 
 .placements-table td {
