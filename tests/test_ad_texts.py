@@ -24,6 +24,12 @@ def _ref(client_id: int, name: str) -> CabinetRef:
     )
 
 
+def test_large_ad_id_is_not_rounded():
+    from src.yandex_direct import _parse_int
+
+    assert _parse_int("1923388988765421825") == 1923388988765421825
+
+
 def test_extract_ad_copy_reads_text_and_responsive_ads():
     assert extract_ad_copy(
         {"TextAd": {"Title": "Суши", "Title2": "за 30 минут", "Text": "Доставка по городу"}}

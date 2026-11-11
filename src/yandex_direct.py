@@ -1040,6 +1040,8 @@ def _parse_int(value: str) -> int:
     cleaned = (value or "0").replace(" ", "").replace(",", ".")
     if not cleaned or cleaned == "--":
         return 0
+    if cleaned.isdigit() or (cleaned[0] == "-" and cleaned[1:].isdigit()):
+        return int(cleaned)
     return int(float(cleaned))
 
 

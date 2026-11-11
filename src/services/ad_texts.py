@@ -407,7 +407,7 @@ def _job_key(settings: Settings, refs: list[CabinetRef], date_from: date, date_t
         settings.yandex_token,
         date_from.isoformat(),
         date_to.isoformat(),
-        "texts-v2",
+        "texts-v3",
         tuple((ref.client_id, ref.goal_ids, ref.attribution_model) for ref in refs),
     )
 
