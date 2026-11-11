@@ -75,7 +75,7 @@
       <tbody>
         {% for row in rows %}
         <tr class="{% if row.error %}row-error{% endif %}{% if row.no_balance %} row-no-balance{% endif %}">
-          <td>{% if row.href %}<a href="{{ row.href }}" target="_blank" rel="noopener" title="Веб-мастер отчётов Директа за этот период">{{ row.client_name }}</a>{% else %}{{ row.client_name }}{% endif %}</td>
+          <td>{% if row.href %}<a href="{{ row.href }}" target="_blank" rel="noopener" title="Мастер отчётов Директа за этот период и с теми же целями, что в учёте конверсий">{{ row.client_name }}</a>{% else %}{{ row.client_name }}{% endif %}</td>
           <td>{{ row.directologist }}</td>
           <td>{{ row.spend }}</td>
           <td>{{ row.conversions }}</td>

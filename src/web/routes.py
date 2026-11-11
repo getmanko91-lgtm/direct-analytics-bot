@@ -289,11 +289,16 @@ def kpi_page(
     yesterday = today - timedelta(days=1)
 
     rows = fetch_kpi_table_cached(db, settings, date_from, date_to)
-    clients = db.query(Client).filter(Client.is_active.is_(True)).all()
+    clients = (
+        db.query(Client)
+        .options(joinedload(Client.goals))
+        .filter(Client.is_active.is_(True))
+        .all()
+    )
     clients_by_id = {client.id: client for client in clients}
     balances = fetch_client_balances(
         settings.yandex_token,
-        [client.yandex_login for client in clients],
+        [client.yandex_login for client in clients_by_id.values()],
     )
     total_spend = sum(r.spend for r in rows if not r.error)
     total_conversions = sum(r.conversions for r in rows if not r.error)
@@ -325,6 +330,8 @@ def kpi_page(
                     client.yandex_login if client else "",
                     date_from,
                     date_to,
+                    selected_goal_ids(client) if client else [],
+                    client.attribution_model if client else None,
                 ),
             }
         )
