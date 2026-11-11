@@ -53,7 +53,7 @@ from src.services.campaign_types import (
     campaigns_without_sales,
     get_campaign_types_job,
 )
-from src.services.direct_links import direct_master_report_url
+from src.services.direct_links import direct_master_report_url, direct_web_master_report_url
 from src.services.keywords_network import (
     build_keyword_report,
     format_keywords_csv,
@@ -321,9 +321,8 @@ def kpi_page(
                 "manual_kpi": client.manual_kpi if client else None,
                 "no_balance": no_balance,
                 "error": r.error,
-                "href": direct_master_report_url(
+                "href": direct_web_master_report_url(
                     client.yandex_login if client else "",
-                    "mol",
                     date_from,
                     date_to,
                 ),
