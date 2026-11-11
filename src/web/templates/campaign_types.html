@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/filter.html" import project_hit %}
 {% block title %}Типы кампаний{% endblock %}
 {% block head %}
 {% if running %}<meta http-equiv="refresh" content="5">{% endif %}
@@ -103,7 +104,7 @@
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr>
+        <tr data-projects="{{ row.cabinets | map(attribute='client_name') | join('||') }}">
           <td>
             <strong>{{ row.label }}</strong>
             {% if row.best_conversions %}<span class="pace-badge pace-ok">больше всего продаж</span>{% endif %}
@@ -112,10 +113,10 @@
           <td>{{ row.campaigns }}</td>
           <td>
             <details class="rsya-cabinets">
-              <summary>{{ row.cabinets_count }}: {{ row.cabinets[0].client_name }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
+              <summary>{{ row.cabinets_count }}: {{ project_hit(row.cabinets[0].client_name) }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
               <ul>
                 {% for cabinet in row.cabinets %}
-                <li>{{ cabinet.client_name }} ({{ cabinet.directologist }}) — {{ cabinet.conversions }} конв., CPA {{ cabinet.cpa }} ₽, {{ cabinet.campaigns }} камп., {{ cabinet.spend }} ₽</li>
+                <li>{{ project_hit(cabinet.client_name) }} ({{ cabinet.directologist }}) — {{ cabinet.conversions }} конв., CPA {{ cabinet.cpa }} ₽, {{ cabinet.campaigns }} камп., {{ cabinet.spend }} ₽</li>
                 {% endfor %}
               </ul>
             </details>
@@ -166,9 +167,9 @@
       </thead>
       <tbody>
         {% for row in report.wasted %}
-        <tr data-text="{{ row.search }}">
+        <tr data-text="{{ row.search }}" data-projects="{{ row.client }}">
           <td class="wrap">{{ row.name }}</td>
-          <td class="wrap">{{ row.client }}<div class="muted">{{ row.directologist }}</div></td>
+          <td class="wrap">{{ project_hit(row.client) }}<div class="muted">{{ row.directologist }}</div></td>
           <td class="miss-spend">{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
           <td class="wrap">{{ row.strategy }}</td>

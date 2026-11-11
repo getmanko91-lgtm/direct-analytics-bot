@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Direct Nikitos Analytics{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261111b">
+  <link rel="stylesheet" href="/static/style.css?v=20261111c">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -42,7 +42,16 @@
   {% endif %}
 
   <main class="container {% if user and (request.url.path == '/vk' or request.url.path.startswith('/vk/') or request.url.path == '/rsya') %}container-full{% endif %}">
+    {% if user %}
+    <div id="projectFilterBar" class="project-filter-bar" hidden>
+      <span>Только проект <strong id="projectFilterName"></strong>. Фильтр действует в остальных разделах.</span>
+      <button type="button" id="projectFilterClear" class="btn btn-secondary btn-sm">Сбросить</button>
+    </div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
+  {% if user %}
+  <script src="/static/filter.js?v=20261111c"></script>
+  {% endif %}
 </body>
 </html>

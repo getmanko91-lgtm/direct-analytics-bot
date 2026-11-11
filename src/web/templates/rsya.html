@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/filter.html" import project_hit %}
 {% block title %}Площадки РСЯ{% endblock %}
 {% block head %}
 {% if running %}<meta http-equiv="refresh" content="5">{% endif %}
@@ -127,7 +128,7 @@
       </thead>
       <tbody>
         {% for row in report.dead %}
-        <tr>
+        <tr data-projects="{{ row.cabinets | map(attribute='client_name') | join('||') }}">
           <td><code class="placement-name">{{ row.placement }}</code></td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
@@ -137,10 +138,10 @@
           <td>{{ row.impressions }}</td>
           <td>
             <details class="rsya-cabinets">
-              <summary>{{ row.cabinets_count }}: {{ row.cabinets[0].client_name }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
+              <summary>{{ row.cabinets_count }}: {{ project_hit(row.cabinets[0].client_name) }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
               <ul>
                 {% for share in row.cabinets %}
-                <li>{{ share.client_name }} ({{ share.directologist }}) — {{ share.spend }} ₽, {{ share.clicks }} кл., CPC {{ share.cpc }} ₽</li>
+                <li>{{ project_hit(share.client_name) }} ({{ share.directologist }}) — {{ share.spend }} ₽, {{ share.clicks }} кл., CPC {{ share.cpc }} ₽</li>
                 {% endfor %}
               </ul>
             </details>
@@ -186,7 +187,7 @@
       </thead>
       <tbody>
         {% for row in report.good %}
-        <tr>
+        <tr data-projects="{{ row.cabinets | map(attribute='client_name') | join('||') }}">
           <td><code class="placement-name">{{ row.placement }}</code></td>
           <td>{{ row.conversions }}</td>
           <td class="cpa-low">{{ row.cpa }}</td>
@@ -195,10 +196,10 @@
           <td>{{ row.cpc }}</td>
           <td>
             <details class="rsya-cabinets">
-              <summary>{{ row.cabinets_count }}: {{ row.cabinets[0].client_name }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
+              <summary>{{ row.cabinets_count }}: {{ project_hit(row.cabinets[0].client_name) }}{% if row.cabinets_count > 1 %} и др.{% endif %}</summary>
               <ul>
                 {% for share in row.cabinets %}
-                <li>{{ share.client_name }} ({{ share.directologist }}) — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽, расход {{ share.spend }} ₽, CPC {{ share.cpc }} ₽</li>
+                <li>{{ project_hit(share.client_name) }} ({{ share.directologist }}) — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽, расход {{ share.spend }} ₽, CPC {{ share.cpc }} ₽</li>
                 {% endfor %}
               </ul>
             </details>
@@ -230,8 +231,8 @@
       </thead>
       <tbody>
         {% for row in report.cabinets %}
-        <tr>
-          <td>{{ row.client_name }}</td>
+        <tr data-projects="{{ row.client_name }}">
+          <td>{{ project_hit(row.client_name) }}</td>
           <td>{{ row.directologist }}</td>
           <td>{{ row.rsya_spend }}</td>
           <td>{{ row.wasted_spend }}</td>
@@ -267,9 +268,9 @@
       </thead>
       <tbody>
         {% for row in report.partial %}
-        <tr>
+        <tr data-projects="{{ row.client_name }}">
           <td><code class="placement-name">{{ row.placement }}</code></td>
-          <td>{{ row.client_name }}</td>
+          <td>{{ project_hit(row.client_name) }}</td>
           <td>{{ row.directologist }}</td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
@@ -323,7 +324,7 @@
       </thead>
       <tbody>
         {% for row in report.all %}
-        <tr data-placement="{{ row.placement | lower }}" data-spend="{{ row.spend_value }}" data-conv="{{ row.converting | length }}">
+        <tr data-placement="{{ row.placement | lower }}" data-spend="{{ row.spend_value }}" data-conv="{{ row.converting | length }}" data-projects="{{ (row.zero + row.converting) | map(attribute='client_name') | join('||') }}">
           <td><code class="placement-name">{{ row.placement }}</code></td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
@@ -333,18 +334,18 @@
           <td class="rsya-projects">
             {% if row.zero %}
             <details class="rsya-cabinets">
-              <summary>{{ row.zero | length }} из {{ row.cabinets_count }} — {{ row.zero[0].client_name }}{% if row.zero | length > 1 %} и др.{% endif %}</summary>
-              <ul>{% for share in row.zero %}<li>{{ share.client_name }} — {{ share.spend }} ₽</li>{% endfor %}</ul>
+              <summary>{{ row.zero | length }} из {{ row.cabinets_count }} — {{ project_hit(row.zero[0].client_name) }}{% if row.zero | length > 1 %} и др.{% endif %}</summary>
+              <ul>{% for share in row.zero %}<li>{{ project_hit(share.client_name) }} — {{ share.spend }} ₽</li>{% endfor %}</ul>
             </details>
             {% else %}—{% endif %}
           </td>
           <td class="rsya-projects">
             {% if row.converting | length == 1 %}
-            {{ row.converting[0].client_name }} — {{ row.converting[0].conversions }} конв., CPA {{ row.converting[0].cpa }} ₽
+            {{ project_hit(row.converting[0].client_name) }} — {{ row.converting[0].conversions }} конв., CPA {{ row.converting[0].cpa }} ₽
             {% elif row.converting %}
             <details class="rsya-cabinets">
-              <summary>{{ row.converting | length }} проектов — {{ row.converting[0].client_name }} и др.</summary>
-              <ul>{% for share in row.converting %}<li>{{ share.client_name }} — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽</li>{% endfor %}</ul>
+              <summary>{{ row.converting | length }} проектов — {{ project_hit(row.converting[0].client_name) }} и др.</summary>
+              <ul>{% for share in row.converting %}<li>{{ project_hit(share.client_name) }} — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽</li>{% endfor %}</ul>
             </details>
             {% else %}—{% endif %}
           </td>

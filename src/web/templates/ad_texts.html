@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/filter.html" import project_hit %}
 {% block title %}Лучшие тексты{% endblock %}
 {% block head %}
 {% if running %}<meta http-equiv="refresh" content="5">{% endif %}
@@ -111,7 +112,7 @@
       </thead>
       <tbody>
         {% for row in report.texts %}
-        <tr data-text="{{ row.search }}" data-conv="{{ row.conversions_value }}" data-deleted="{{ '1' if row.deleted else '0' }}">
+        <tr data-text="{{ row.search }}" data-conv="{{ row.conversions_value }}" data-deleted="{{ '1' if row.deleted else '0' }}" data-projects="{{ row.cabinets | map(attribute='client_name') | join('||') }}">
           <td>
             <div class="ad-text-title">{% if row.href %}<a href="{{ row.href }}" target="_blank" rel="noopener">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %}</div>
             {% if row.body %}<div class="muted ad-text-body">{{ row.body }}</div>{% endif %}
@@ -125,7 +126,7 @@
           <td>{{ row.clicks }}</td>
           <td class="rsya-projects">
             {% for share in row.cabinets %}
-            <div>{% if share.href %}<a href="{{ share.href }}" target="_blank" rel="noopener">{{ share.client_name }}</a>{% else %}{{ share.client_name }}{% endif %} — {% if share.conversions_value > 0 %}{{ share.conversions }} конв.{% if share.cpa != '—' %}, CPA {{ share.cpa }} ₽{% endif %}{% else %}0 конв., {{ share.spend }} ₽{% endif %}</div>
+            <div>{{ project_hit(share.client_name, share.href, 'Объявления в Директе') }} — {% if share.conversions_value > 0 %}{{ share.conversions }} конв.{% if share.cpa != '—' %}, CPA {{ share.cpa }} ₽{% endif %}{% else %}0 конв., {{ share.spend }} ₽{% endif %}</div>
             {% endfor %}
           </td>
         </tr>

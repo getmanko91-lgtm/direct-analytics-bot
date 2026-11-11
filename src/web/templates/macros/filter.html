@@ -1,0 +1,4 @@
+{% macro project_hit(name, href='', title='') -%}
+<button type="button" class="filter-hit" data-filter="{{ name }}" title="Показать только этот проект во всех разделах">{{ name }}</button>
+{%- if href %} <a class="filter-report" href="{{ href }}" target="_blank" rel="noopener" title="{{ title or 'Открыть отчёт' }}">отчёт</a>{% endif -%}
+{%- endmacro %}

@@ -846,6 +846,52 @@ code {
   color: var(--muted);
 }
 
+.project-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: rgba(252, 63, 29, 0.12);
+}
+
+.project-filter-bar[hidden] {
+  display: none;
+}
+
+.filter-hit {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #6eb6ff;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.filter-hit:hover {
+  text-decoration: underline;
+}
+
+.filter-hit.is-on {
+  color: var(--text);
+  background: rgba(252, 63, 29, 0.28);
+  border-radius: 6px;
+  padding: 0 0.35rem;
+}
+
+tr.project-filtered {
+  display: none;
+}
+
+.filter-report {
+  margin-left: 0.35rem;
+  font-size: 0.85em;
+}
+
 .rsya-all-filters {
   display: flex;
   flex-wrap: wrap;

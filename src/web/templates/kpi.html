@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/filter.html" import project_hit %}
 {% block title %}KPI{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -74,8 +75,8 @@
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr class="{% if row.error %}row-error{% endif %}{% if row.no_balance %} row-no-balance{% endif %}">
-          <td>{% if row.href %}<a href="{{ row.href }}" target="_blank" rel="noopener" title="Мастер отчётов Директа за этот период и с теми же целями, что в учёте конверсий">{{ row.client_name }}</a>{% else %}{{ row.client_name }}{% endif %}</td>
+        <tr class="{% if row.error %}row-error{% endif %}{% if row.no_balance %} row-no-balance{% endif %}" data-projects="{{ row.client_name }}">
+          <td>{{ project_hit(row.client_name, row.href, 'Мастер отчётов Директа за этот период и с теми же целями, что в учёте конверсий') }}</td>
           <td>{{ row.directologist }}</td>
           <td>{{ row.spend }}</td>
           <td>{{ row.conversions }}</td>

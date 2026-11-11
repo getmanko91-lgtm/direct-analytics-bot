@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "macros/balance.html" import balance_badge %}
+{% from "macros/filter.html" import project_hit %}
 {% block title %}Сводка{% endblock %}
 {% block content %}
 <div class="analytics-page">
@@ -57,11 +58,12 @@
     </thead>
     <tbody>
       {% for row in rows %}
-      <tr class="{% if row.error %}row-error{% endif %}">
+      <tr class="{% if row.error %}row-error{% endif %}" data-projects="{{ row.client_name }}">
         <td>
           {% if row.show_client_block %}
           <div class="client-cell">
-            <a href="/clients/{{ row.client_id }}/analytics?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="client-link">{{ row.client_name }}</a>
+            {{ project_hit(row.client_name) }}
+            <a href="/clients/{{ row.client_id }}/analytics?date_from={{ date_from.isoformat() }}&date_to={{ date_to.isoformat() }}" class="filter-report">карточка</a>
             {{ balance_badge(row.balance_amount, row.balance_low, row.balance_error) }}
           </div>
           {% endif %}

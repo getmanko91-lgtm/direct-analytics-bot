@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/filter.html" import project_hit %}
 {% block title %}VK Nikitos Analytics{% endblock %}
 {% block head %}
 {% if running %}<meta http-equiv="refresh" content="5">{% endif %}
@@ -144,8 +145,8 @@
       </thead>
       <tbody>
         {% for row in report.cabinets %}
-        <tr data-text="{{ row.search }}">
-          <td>{{ row.name }}</td>
+        <tr data-text="{{ row.search }}" data-projects="{{ row.name }}">
+          <td>{{ project_hit(row.name) }}</td>
           <td class="num">{{ row.order_spend }}</td>
           <td class="num">{{ row.join_spend }}</td>
           <td class="num">{{ row.subscriptions }}</td>
@@ -189,14 +190,14 @@
       </thead>
       <tbody>
         {% for row in report.campaigns %}
-        <tr data-text="{{ row.search }}" data-kind="{{ row.kind }}">
+        <tr data-text="{{ row.search }}" data-kind="{{ row.kind }}" data-projects="{{ row.client }}">
           <td class="wrap">{{ row.name }}</td>
           <td>{{ row.kind_label }}</td>
           <td>{{ row.goals }}</td>
           <td class="{{ row.cpa_class }}">{{ row.cpa }}</td>
           <td>{{ row.spend }}</td>
           <td>{{ row.clicks }}</td>
-          <td class="wrap">{{ row.client }}</td>
+          <td class="wrap">{{ project_hit(row.client) }}</td>
           <td>{{ row.objective }}</td>
         </tr>
         {% else %}
@@ -239,7 +240,7 @@
       </thead>
       <tbody>
         {% for row in report.texts %}
-        <tr data-text="{{ row.search }}" data-kind="{{ row.kind }}" data-deleted="{{ '1' if row.deleted else '0' }}">
+        <tr data-text="{{ row.search }}" data-kind="{{ row.kind }}" data-deleted="{{ '1' if row.deleted else '0' }}" data-projects="{{ row.shares | map(attribute='name') | join('||') }}">
           <td>
             <div class="ad-text-title">{{ row.title }}</div>
             {% if row.body %}<div class="muted ad-text-body">{{ row.body }}</div>{% endif %}
@@ -251,7 +252,7 @@
           <td>{{ row.clicks }}</td>
           <td class="rsya-projects">
             {% for share in row.shares %}
-            <div>{{ share.name }} — {% if share.goals_value > 0 %}{{ share.goals }} рез.{% if share.cpa != '—' %}, CPA {{ share.cpa }} ₽{% endif %}{% else %}0 рез., {{ share.spend }} ₽{% endif %}</div>
+            <div>{{ project_hit(share.name) }} — {% if share.goals_value > 0 %}{{ share.goals }} рез.{% if share.cpa != '—' %}, CPA {{ share.cpa }} ₽{% endif %}{% else %}0 рез., {{ share.spend }} ₽{% endif %}</div>
             {% endfor %}
           </td>
         </tr>
@@ -281,12 +282,12 @@
       </thead>
       <tbody>
         {% for row in report.audiences %}
-        <tr data-text="{{ row.search }}">
+        <tr data-text="{{ row.search }}" data-projects="{{ row.client }}">
           <td class="wrap">{{ row.name }}</td>
           <td>{{ row.kind }}</td>
           <td>{{ row.users }}</td>
           <td>{{ row.created }}</td>
-          <td class="wrap">{{ row.client }}</td>
+          <td class="wrap">{{ project_hit(row.client) }}</td>
         </tr>
         {% else %}
         <tr><td colspan="5" class="muted">Нет сегментов в кабинетах с расходом</td></tr>
