@@ -70,6 +70,10 @@ def test_texts_are_ranked_across_cabinets_by_conversions():
     assert "Пицца — бесплатная доставка" in [item.label for item in report.texts]
     deleted = [item for item in report.texts if item.title == "Объявление удалено"]
     assert len(deleted) == 2
+    deleted_with_sales = next(item for item in deleted if item.conversions == 2)
+    assert "banners-ids=8" in deleted_with_sales.href
+    assert "ulogin=login-2" in deleted_with_sales.href
+    assert "banners-ids=1" in report.texts[0].href
     assert {item.conversions for item in deleted} == {0, 2}
     assert report.texts[0].conversions == 9
     assert report.texts[0].spend == 1500

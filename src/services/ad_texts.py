@@ -7,6 +7,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import date
+from urllib.parse import urlencode
 
 from src.config import Settings
 from src.services.kpi_table import is_kpi_campaign
@@ -54,6 +55,17 @@ def extract_ad_copy(ad: dict) -> tuple[str, str]:
     if body:
         return "", body
     return "", ""
+
+
+def direct_ad_url(login: str, campaign_id: int, ad_id: int) -> str:
+    """Ссылка в кабинет Директа. Работает и для удалённого объявления: открывается по его номеру."""
+    login = (login or "").strip()
+    if not login or not ad_id:
+        return ""
+    query = {"ulogin": login, "banners-ids": str(ad_id)}
+    if campaign_id:
+        query["campaigns-ids"] = str(campaign_id)
+    return "https://direct.yandex.ru/dna/grid/banners?" + urlencode(query)
 
 
 def text_identity(title: str, body: str, ad_id: int) -> str:
@@ -143,6 +155,7 @@ class TextShare:
     spend: float
     clicks: int
     conversions: float
+    href: str = ""
 
     @property
     def cpa(self) -> float | None:
@@ -163,6 +176,7 @@ class RankedText:
     conversions: float
     cabinets: tuple[TextShare, ...]
     archived: bool = False
+    href: str = ""
 
     @property
     def cpa(self) -> float | None:
@@ -240,11 +254,16 @@ def build_ad_texts_report(
                     "spend": 0.0,
                     "clicks": 0,
                     "conversions": 0.0,
+                    "href": "",
+                    "href_conversions": -1.0,
                 },
             )
             share["spend"] += ad.spend
             share["clicks"] += ad.clicks
             share["conversions"] += ad.conversions
+            if ad.ad_id and ad.conversions >= share["href_conversions"]:
+                share["href"] = direct_ad_url(item.cabinet.yandex_login, ad.campaign_id, ad.ad_id)
+                share["href_conversions"] = ad.conversions
             bucket["impressions"] = bucket.get("impressions", 0) + ad.impressions
 
     ranked: list[RankedText] = []
@@ -256,6 +275,7 @@ def build_ad_texts_report(
                 spend=raw["spend"],
                 clicks=raw["clicks"],
                 conversions=raw["conversions"],
+                href=raw["href"],
             )
             for raw in bucket["shares"].values()
         )
@@ -276,6 +296,7 @@ def build_ad_texts_report(
                 conversions=sum(share.conversions for share in shares),
                 cabinets=shares,
                 archived=bool(bucket["archived"]),
+                href=shares[0].href if shares else "",
             )
         )
     ranked.sort(key=lambda item: (-item.conversions, -item.spend))

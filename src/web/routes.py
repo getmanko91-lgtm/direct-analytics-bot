@@ -971,6 +971,7 @@ def ad_texts_page(
             {
                 "title": item.title,
                 "body": item.body,
+                "href": item.href,
                 "deleted": item.title == "Объявление удалено" and not item.body,
                 "archived": item.archived,
                 "search": item.label.casefold(),
@@ -985,6 +986,7 @@ def ad_texts_page(
                 "cabinets": [
                     {
                         "client_name": share.client_name,
+                        "href": share.href,
                         "conversions": _fmt_conv_count(share.conversions),
                         "conversions_value": share.conversions,
                         "cpa": _fmt_cost(share.cpa),
