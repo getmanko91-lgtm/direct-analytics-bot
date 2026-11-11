@@ -786,6 +786,31 @@ code {
   margin-top: 1.5rem;
 }
 
+.rsya-fit {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.rsya-fit th {
+  white-space: normal;
+}
+
+.placements-card .table-wrap {
+  overflow-x: visible;
+}
+
+.rsya-fit th:first-child,
+.rsya-fit td:first-child,
+.rsya-fit th:last-child,
+.rsya-fit td:last-child,
+.rsya-fit .placement-name,
+.rsya-fit .rsya-cabinets,
+.rsya-fit .rsya-cabinets ul,
+.rsya-fit .rsya-cabinets li {
+  white-space: normal;
+  word-break: break-word;
+}
+
 .placements-table td {
   vertical-align: top;
 }

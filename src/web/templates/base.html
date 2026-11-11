@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Direct Nikitos Analytics{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261110o">
+  <link rel="stylesheet" href="/static/style.css?v=20261111a">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -41,7 +41,7 @@
   </nav>
   {% endif %}
 
-  <main class="container {% if user and (request.url.path == '/vk' or request.url.path.startswith('/vk/')) %}container-full{% endif %}">
+  <main class="container {% if user and (request.url.path == '/vk' or request.url.path.startswith('/vk/') or request.url.path == '/rsya') %}container-full{% endif %}">
     {% block content %}{% endblock %}
   </main>
 </body>
