@@ -84,6 +84,7 @@ class KeywordMiss:
     keyword: str
     project: str
     directologist: str
+    client_id: int
     spend: float
     clicks: int
     cpc: float | None
@@ -102,6 +103,7 @@ def keyword_project_misses(report: RsyaNetworkReport, min_spend: float) -> tuple
                     keyword=item.placement,
                     project=share.client_name,
                     directologist=share.directologist,
+                    client_id=share.client_id,
                     spend=share.spend,
                     clicks=share.clicks,
                     cpc=share.cpc,

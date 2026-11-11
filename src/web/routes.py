@@ -53,6 +53,7 @@ from src.services.campaign_types import (
     campaigns_without_sales,
     get_campaign_types_job,
 )
+from src.services.direct_links import direct_master_report_url
 from src.services.keywords_network import (
     build_keyword_report,
     format_keywords_csv,
@@ -320,6 +321,12 @@ def kpi_page(
                 "manual_kpi": client.manual_kpi if client else None,
                 "no_balance": no_balance,
                 "error": r.error,
+                "href": direct_master_report_url(
+                    client.yandex_login if client else "",
+                    "mol",
+                    date_from,
+                    date_to,
+                ),
             }
         )
     return templates.TemplateResponse(
@@ -727,6 +734,16 @@ def keywords_page(
             good_min_conversions=min_conv,
         )
         view = _network_report_dict(report)
+        logins = {ref.client_id: ref.yandex_login for ref in refs}
+
+        def keyword_href(client_id: int) -> str:
+            return direct_master_report_url(
+                logins.get(client_id, ""),
+                "search_queries",
+                date_from,
+                date_to,
+            )
+
         misses = keyword_project_misses(report, min_spend)
         view["misses"] = [
             {
@@ -738,10 +755,27 @@ def keywords_page(
                 "cpc": _fmt_cost(item.cpc),
                 "elsewhere": _fmt_conv_count(item.conversions_elsewhere),
                 "worked_elsewhere": item.conversions_elsewhere > 0,
+                "href": keyword_href(item.client_id),
             }
             for item in misses
         ]
         view["projects"] = sorted({item.project for item in misses})
+        for row, item in zip(view["good"], report.good):
+            for share_row, share in zip(row["cabinets"], item.cabinets):
+                share_row["href"] = keyword_href(share.client_id)
+        for row, item in zip(view["all"], report.all_placements):
+            zero = [share for share in item.cabinets if share.conversions <= 0]
+            converting = sorted(
+                (share for share in item.cabinets if share.conversions > 0),
+                key=lambda share: share.conversions,
+                reverse=True,
+            )
+            for share_row, share in zip(row["zero"], zero):
+                share_row["href"] = keyword_href(share.client_id)
+            for share_row, share in zip(row["converting"], converting):
+                share_row["href"] = keyword_href(share.client_id)
+        for row, item in zip(view["cabinets"], report.cabinets):
+            row["href"] = keyword_href(item.client_id)
         context["report"] = view
     return templates.TemplateResponse(request, "keywords.html", context)
 

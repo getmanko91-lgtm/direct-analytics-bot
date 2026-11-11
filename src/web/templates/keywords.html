@@ -109,9 +109,9 @@
       <tbody>
         {% for row in report.misses %}
         <tr data-project="{{ row.project }}" data-keyword="{{ row.keyword | lower }}">
-          <td>{{ row.project }}<div class="muted">{{ row.directologist }}</div></td>
+          <td>{% if row.href %}<a href="{{ row.href }}" target="_blank" rel="noopener" title="Поисковые запросы в мастере отчётов">{{ row.project }}</a>{% else %}{{ row.project }}{% endif %}<div class="muted">{{ row.directologist }}</div></td>
           <td class="miss-spend">{{ row.spend }}</td>
-          <td><code class="placement-name">{{ row.keyword }}</code></td>
+          <td>{% if row.href %}<a href="{{ row.href }}" target="_blank" rel="noopener" title="Поисковые запросы в мастере отчётов"><code class="placement-name">{{ row.keyword }}</code></a>{% else %}<code class="placement-name">{{ row.keyword }}</code>{% endif %}</td>
           <td>{{ row.clicks }}</td>
           <td>{{ row.cpc }}</td>
           <td>{% if row.worked_elsewhere %}есть, {{ row.elsewhere }} конв.{% else %}нигде{% endif %}</td>
@@ -182,7 +182,7 @@
           <td><code class="placement-name">{{ row.placement }}</code></td>
           <td class="rsya-projects">
             {% for share in row.cabinets %}
-            <div>{{ share.client_name }} — {{ share.conversions }} конв.{% if share.cpa != '—' %}, CPA {{ share.cpa }} ₽{% else %}, {{ share.spend }} ₽{% endif %}</div>
+            <div>{% if share.href %}<a href="{{ share.href }}" target="_blank" rel="noopener" title="Поисковые запросы в мастере отчётов">{{ share.client_name }}</a>{% else %}{{ share.client_name }}{% endif %} — {{ share.conversions }} конв.{% if share.cpa != '—' %}, CPA {{ share.cpa }} ₽{% else %}, {{ share.spend }} ₽{% endif %}</div>
             {% endfor %}
           </td>
           <td>{{ row.conversions }}</td>
@@ -218,7 +218,7 @@
       <tbody>
         {% for row in report.cabinets %}
         <tr>
-          <td>{{ row.client_name }}</td>
+          <td>{% if row.href %}<a href="{{ row.href }}" target="_blank" rel="noopener" title="Поисковые запросы в мастере отчётов">{{ row.client_name }}</a>{% else %}{{ row.client_name }}{% endif %}</td>
           <td>{{ row.directologist }}</td>
           <td>{{ row.rsya_spend }}</td>
           <td>{{ row.wasted_spend }}</td>
@@ -280,17 +280,17 @@
             {% if row.zero %}
             <details class="rsya-cabinets">
               <summary>{{ row.zero | length }} из {{ row.cabinets_count }} — {{ row.zero[0].client_name }}{% if row.zero | length > 1 %} и др.{% endif %}</summary>
-              <ul>{% for share in row.zero %}<li>{{ share.client_name }} — {{ share.spend }} ₽</li>{% endfor %}</ul>
+              <ul>{% for share in row.zero %}<li>{% if share.href %}<a href="{{ share.href }}" target="_blank" rel="noopener" title="Поисковые запросы в мастере отчётов">{{ share.client_name }}</a>{% else %}{{ share.client_name }}{% endif %} — {{ share.spend }} ₽</li>{% endfor %}</ul>
             </details>
             {% else %}—{% endif %}
           </td>
           <td class="rsya-projects">
             {% if row.converting | length == 1 %}
-            {{ row.converting[0].client_name }} — {{ row.converting[0].conversions }} конв., CPA {{ row.converting[0].cpa }} ₽
+            {% if row.converting[0].href %}<a href="{{ row.converting[0].href }}" target="_blank" rel="noopener" title="Поисковые запросы в мастере отчётов">{{ row.converting[0].client_name }}</a>{% else %}{{ row.converting[0].client_name }}{% endif %} — {{ row.converting[0].conversions }} конв., CPA {{ row.converting[0].cpa }} ₽
             {% elif row.converting %}
             <details class="rsya-cabinets">
               <summary>{{ row.converting | length }} проектов — {{ row.converting[0].client_name }} и др.</summary>
-              <ul>{% for share in row.converting %}<li>{{ share.client_name }} — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽</li>{% endfor %}</ul>
+              <ul>{% for share in row.converting %}<li>{% if share.href %}<a href="{{ share.href }}" target="_blank" rel="noopener" title="Поисковые запросы в мастере отчётов">{{ share.client_name }}</a>{% else %}{{ share.client_name }}{% endif %} — {{ share.conversions }} конв., CPA {{ share.cpa }} ₽</li>{% endfor %}</ul>
             </details>
             {% else %}—{% endif %}
           </td>

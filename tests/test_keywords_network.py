@@ -84,9 +84,9 @@ def test_keyword_project_miss_is_one_row_per_project_without_sales():
     ]
     report = build_network_report(cabinets, date(2026, 10, 1), date(2026, 10, 31), min_spend=600)
     misses = keyword_project_misses(report, 600)
-    assert [(item.project, item.keyword, item.conversions_elsewhere) for item in misses] == [
-        ("Япошка", "роллы", 3),
-        ("Япошка", "пицца", 0),
+    assert [(item.project, item.keyword, item.conversions_elsewhere, item.client_id) for item in misses] == [
+        ("Япошка", "роллы", 3, 1),
+        ("Япошка", "пицца", 0, 1),
     ]
     everything = keyword_project_misses(report, 0)
     assert [(item.project, item.keyword) for item in everything] == [
