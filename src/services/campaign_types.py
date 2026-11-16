@@ -146,6 +146,80 @@ def _describe_placement(node: dict) -> tuple[str, str, str]:
     return name, payment, _budget_kind(node)
 
 
+_BUDGET_MICROS = 1_000_000
+
+
+def weekly_spend_limit_rub(node: dict | None) -> float:
+    """Недельный бюджет стратегии в рублях.
+
+    В API лимит лежит в миллионных долях валюты. У кампании он повторяется
+    в поиске и в РСЯ — это один бюджет, поэтому берётся большее значение.
+    """
+    if not isinstance(node, dict):
+        return 0.0
+    limits: list[float] = []
+
+    def walk(obj: object) -> None:
+        if isinstance(obj, dict):
+            limit = obj.get("WeeklySpendLimit")
+            if isinstance(limit, (int, float)) and not isinstance(limit, bool) and limit > 0:
+                limits.append(float(limit))
+            for value in obj.values():
+                walk(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(node)
+    if not limits:
+        return 0.0
+    return max(limits) / _BUDGET_MICROS
+
+
+def launched_weekly_budgets(
+    campaigns: list[dict],
+    package_strategies: list[dict],
+) -> tuple[float, int]:
+    """Сумма недельных бюджетов кампаний со статусом «идут показы».
+
+    Общий бюджет пакетной стратегии считается один раз, даже если на нём
+    несколько запущенных кампаний.
+    """
+    packages = {
+        int(item["Id"]): item
+        for item in package_strategies
+        if isinstance(item, dict) and isinstance(item.get("Id"), int)
+    }
+    total = 0.0
+    count = 0
+    seen_packages: set[int] = set()
+    for campaign in campaigns:
+        if str(campaign.get("State") or "") != "ON":
+            continue
+        block = _campaign_block(campaign)
+        bidding = block.get("BiddingStrategy")
+        package = block.get("PackageBiddingStrategy") if isinstance(block.get("PackageBiddingStrategy"), dict) else {}
+        package_id = package.get("StrategyId") if isinstance(package, dict) else None
+        has_own = isinstance(bidding, dict) and (
+            bidding.get("BiddingStrategyType") or "Search" in bidding or "Network" in bidding
+        )
+        if has_own:
+            amount = weekly_spend_limit_rub(bidding)
+            if amount > 0:
+                total += amount
+                count += 1
+            continue
+        if isinstance(package_id, int) and package_id:
+            amount = weekly_spend_limit_rub(packages.get(package_id))
+            if amount <= 0:
+                continue
+            count += 1
+            if package_id not in seen_packages:
+                seen_packages.add(package_id)
+                total += amount
+    return total, count
+
+
 def _budget_kind(node: dict) -> str:
     explicit: list[str] = []
     weekly = False

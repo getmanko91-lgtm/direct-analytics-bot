@@ -66,6 +66,65 @@ def test_describe_strategy_payment_model_and_budget():
     )
 
 
+def test_launched_weekly_budgets_do_not_double_search_and_network():
+    from src.services.campaign_types import launched_weekly_budgets
+
+    campaigns = [
+        {
+            "Id": 1,
+            "State": "ON",
+            "Name": "МК Поиск",
+            "TextCampaign": {
+                "BiddingStrategy": {
+                    "Search": {
+                        "BiddingStrategyType": "WB_MAXIMUM_CONVERSION_RATE",
+                        "WbMaximumConversionRate": {"WeeklySpendLimit": 5_000_000_000},
+                    },
+                    "Network": {
+                        "BiddingStrategyType": "WB_MAXIMUM_CONVERSION_RATE",
+                        "WbMaximumConversionRate": {"WeeklySpendLimit": 5_000_000_000},
+                    },
+                }
+            },
+        },
+        {
+            "Id": 2,
+            "State": "SUSPENDED",
+            "Name": "МК Сеть",
+            "TextCampaign": {
+                "BiddingStrategy": {
+                    "Search": {
+                        "BiddingStrategyType": "WB_MAXIMUM_CLICKS",
+                        "WbMaximumClicks": {"WeeklySpendLimit": 9_000_000_000},
+                    }
+                }
+            },
+        },
+        {
+            "Id": 3,
+            "State": "ON",
+            "Name": "ЕПК 1",
+            "UnifiedCampaign": {"PackageBiddingStrategy": {"StrategyId": 9}},
+        },
+        {
+            "Id": 4,
+            "State": "ON",
+            "Name": "ЕПК 2",
+            "UnifiedCampaign": {"PackageBiddingStrategy": {"StrategyId": 9}},
+        },
+    ]
+    packages = [
+        {
+            "Id": 9,
+            "Type": "PAY_FOR_CONVERSION",
+            "PayForConversion": {"WeeklySpendLimit": 3_000_000_000, "BudgetType": "WEEKLY_BUDGET"},
+        }
+    ]
+    total, count = launched_weekly_budgets(campaigns, packages)
+    assert total == 8_000.0
+    assert count == 3
+
+
 def test_strategy_index_accepts_numeric_campaign_id():
     campaigns = [
         {

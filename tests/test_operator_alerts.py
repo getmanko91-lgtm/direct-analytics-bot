@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from src.services.client_balances import ClientBalance
 from src.services.operator_alerts import (
+    BudgetCapAlert,
     CampaignAlert,
     RsyaWasteAlert,
     WeeklyOverspend,
@@ -10,6 +11,7 @@ from src.services.operator_alerts import (
     calendar_week_containing,
     filter_cheap_campaigns,
     filter_dead_campaigns,
+    format_budget_caps,
     format_cheap_campaigns,
     format_dead_campaigns,
     format_low_balance,
@@ -142,3 +144,20 @@ def test_operator_messages_are_plain_chat_text():
     )
     assert "7 000,00 ₽ или меньше" in format_low_balance(alerts.low_balance)
     assert "На балансе 0 ₽" in format_zero_balance(alerts.zero_balance)
+
+
+def test_budget_cap_warning_when_launched_budgets_exceed_weekly_plan():
+    alerts = [
+        BudgetCapAlert("СушиСЕЛЛ г. Кингисепп", "Лариса", 18000, 12500, 3),
+    ]
+    text = format_budget_caps(alerts)
+    assert "Операторам" in text
+    assert "Бюджеты запущенных кампаний больше недельного открута" in text
+    assert "Лариса · СушиСЕЛЛ г. Кингисепп" in text
+    assert "18 000,00 ₽" in text
+    assert "12 500,00 ₽" in text
+    assert "3 запущенных" in text
+    messages = format_operator_messages(
+        OperatorAlerts(budget_caps=alerts)
+    )
+    assert messages == [text]

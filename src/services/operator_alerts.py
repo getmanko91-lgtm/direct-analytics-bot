@@ -9,6 +9,7 @@ from src.config import Settings
 from src.db.models import Client
 from src.services.analytics_table import fetch_analytics_table_cached
 from src.services.client_balances import BALANCE_LOW_THRESHOLD, fetch_client_balances
+from src.services.campaign_types import _campaign_block, launched_weekly_budgets
 from src.services.cpa_style import weekly_budget
 from src.services.direct_report_rows import fetch_campaign_performance_rows_cached
 from src.services.parallel_fetch import map_parallel
@@ -53,6 +54,15 @@ class RsyaWasteAlert:
 
 
 @dataclass(frozen=True)
+class BudgetCapAlert:
+    client_name: str
+    directologist: str
+    budgets_sum: float
+    weekly_plan: float
+    campaigns: int
+
+
+@dataclass(frozen=True)
 class BalanceAlert:
     client_name: str
     directologist: str
@@ -62,6 +72,7 @@ class BalanceAlert:
 @dataclass
 class OperatorAlerts:
     weekly_overspend: list[WeeklyOverspend] = field(default_factory=list)
+    budget_caps: list[BudgetCapAlert] = field(default_factory=list)
     dead_campaigns: list[CampaignAlert] = field(default_factory=list)
     rsya_waste: list[RsyaWasteAlert] = field(default_factory=list)
     cheap_campaigns: list[CampaignAlert] = field(default_factory=list)
@@ -206,6 +217,20 @@ def format_weekly_overspend(alerts: list[WeeklyOverspend], date_from: date, date
     return "\n".join(lines).rstrip()
 
 
+def format_budget_caps(alerts: list[BudgetCapAlert]) -> str:
+    lines = _header("Бюджеты запущенных кампаний больше недельного открута")
+    lines.append("")
+    for item in alerts:
+        lines.append(_client_label(item))
+        lines.append(
+            f"сумма бюджетов {_fmt_money(item.budgets_sum)} ₽ "
+            f"при недельном откруте {_fmt_money(item.weekly_plan)} ₽ "
+            f"({item.campaigns} запущенных)"
+        )
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 def format_dead_campaigns(alerts: list[CampaignAlert], date_from: date, date_to: date) -> str:
     lines = _header(
         f"Кампания открутила от {_fmt_money(DEAD_CAMPAIGN_MIN_SPEND)} ₽ и не дала конверсий",
@@ -271,6 +296,8 @@ def format_operator_messages(alerts: OperatorAlerts) -> list[str]:
     messages: list[str] = []
     if alerts.weekly_overspend and alerts.week_from and alerts.week_to:
         messages.append(format_weekly_overspend(alerts.weekly_overspend, alerts.week_from, alerts.week_to))
+    if alerts.budget_caps:
+        messages.append(format_budget_caps(alerts.budget_caps))
     if alerts.dead_campaigns and alerts.bidaily_from and alerts.bidaily_to:
         messages.append(format_dead_campaigns(alerts.dead_campaigns, alerts.bidaily_from, alerts.bidaily_to))
     if alerts.rsya_waste and alerts.week_from and alerts.week_to:
@@ -306,6 +333,7 @@ def collect_operator_alerts(
 
     balances = fetch_client_balances(settings.yandex_token, [client.yandex_login for client in clients])
     result.zero_balance, result.low_balance = split_balance_alerts(clients, balances)
+    result.budget_caps = _budget_cap_alerts(settings, clients)
 
     if is_weekly_alert_day(today):
         week_from, week_to = calendar_week_containing(yesterday)
@@ -342,6 +370,50 @@ def collect_operator_alert_messages(
     today: date,
 ) -> list[str]:
     return format_operator_messages(collect_operator_alerts(db, settings, today))
+
+
+def _budget_cap_alerts(settings: Settings, clients: list[Client]) -> list[BudgetCapAlert]:
+    ready = [client for client in clients if weekly_budget(float(client.monthly_budget or 0)) > 0]
+
+    def _for_client(client: Client) -> list[BudgetCapAlert]:
+        plan = weekly_budget(float(client.monthly_budget or 0))
+        try:
+            api = YandexDirectClient(settings.yandex_token, client.yandex_login)
+            campaigns = api.fetch_campaign_settings()
+            package_ids = _launched_package_ids(campaigns)
+            packages = api.fetch_package_strategies(package_ids) if package_ids else []
+        except Exception:
+            return []
+        total, count = launched_weekly_budgets(campaigns, packages)
+        if count <= 0 or total <= plan:
+            return []
+        return [
+            BudgetCapAlert(
+                client_name=client.name,
+                directologist=client.directologist or "—",
+                budgets_sum=total,
+                weekly_plan=plan,
+                campaigns=count,
+            )
+        ]
+
+    alerts: list[BudgetCapAlert] = []
+    for batch in map_parallel(_for_client, ready):
+        alerts.extend(batch)
+    return alerts
+
+
+def _launched_package_ids(campaigns: list[dict]) -> list[int]:
+    ids: list[int] = []
+    for campaign in campaigns:
+        if str(campaign.get("State") or "") != "ON":
+            continue
+        block = _campaign_block(campaign)
+        package = block.get("PackageBiddingStrategy") if isinstance(block.get("PackageBiddingStrategy"), dict) else {}
+        package_id = package.get("StrategyId") if isinstance(package, dict) else None
+        if isinstance(package_id, int) and package_id and package_id not in ids:
+            ids.append(package_id)
+    return ids
 
 
 def _weekly_overspend(
