@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 from src.services.client_balances import ClientBalance
 from src.services.operator_alerts import (
+    _current_month,
+    _current_week,
     BudgetCapAlert,
     CampaignAlert,
     RsyaWasteAlert,
@@ -146,10 +148,18 @@ def test_operator_messages_are_plain_chat_text():
     assert "На балансе 0 ₽" in format_zero_balance(alerts.zero_balance)
 
 
+def test_budget_cap_spend_periods_are_current_week_and_month():
+    today = date(2026, 11, 16)
+    assert _current_week(today) == (date(2026, 11, 16), date(2026, 11, 16))
+    assert _current_month(today) == (date(2026, 11, 1), date(2026, 11, 16))
+    wednesday = date(2026, 11, 18)
+    assert _current_week(wednesday) == (date(2026, 11, 16), date(2026, 11, 18))
+
+
 def test_budget_cap_warning_when_launched_budgets_exceed_weekly_plan():
     alerts = [
-        BudgetCapAlert("СушиСЕЛЛ г. Кингисепп", "Лариса", 18000, 12500, 3, 50000),
-        BudgetCapAlert("СушиСЕЛЛ г. Гатчина", "Ксюша", 12000, 5000, 1, 20000),
+        BudgetCapAlert("СушиСЕЛЛ г. Кингисепп", "Лариса", 18000, 12500, 3, 50000, 8400, 31000),
+        BudgetCapAlert("СушиСЕЛЛ г. Гатчина", "Ксюша", 12000, 5000, 1, 20000, 900, 6400),
     ]
     messages = format_budget_caps(alerts)
     assert len(messages) == 2
@@ -161,8 +171,8 @@ def test_budget_cap_warning_when_launched_budgets_exceed_weekly_plan():
         "\n"
         "(3 запущенные кампании)\n"
         "\n"
-        "Недельный открут - 18 000,00 ₽ (запланировано: 12 500,00 ₽)\n"
-        "Месячный открут - 72 000,00 ₽ (запланировано: 50 000,00 ₽)"
+        "Недельный открут - 8 400,00 ₽ (запланировано: 12 500,00 ₽)\n"
+        "Месячный открут - 31 000,00 ₽ (запланировано: 50 000,00 ₽)"
     )
     assert messages[1].splitlines()[0] == "СушиСЕЛЛ г. Гатчина - специалист проекта (Ксюша)"
     assert "(1 запущенная кампания)" in messages[1]

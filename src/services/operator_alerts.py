@@ -10,7 +10,7 @@ from src.db.models import Client
 from src.services.analytics_table import fetch_analytics_table_cached
 from src.services.client_balances import BALANCE_LOW_THRESHOLD, fetch_client_balances
 from src.services.campaign_types import _campaign_block, launched_weekly_budgets
-from src.services.cpa_style import WEEKS_PER_MONTH, weekly_budget
+from src.services.cpa_style import weekly_budget
 from src.services.direct_report_rows import fetch_campaign_performance_rows_cached
 from src.services.parallel_fetch import map_parallel
 from src.services.rsya_placements import _filter_zero_conversion_placements
@@ -61,6 +61,8 @@ class BudgetCapAlert:
     weekly_plan: float
     campaigns: int
     monthly_plan: float = 0.0
+    weekly_spend: float | None = None
+    monthly_spend: float | None = None
 
 
 @dataclass(frozen=True)
@@ -233,9 +235,14 @@ def _launched_campaigns_label(count: int) -> str:
     return f"({number} {words})"
 
 
+def _fmt_spend(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{_fmt_money(value)} ₽"
+
+
 def format_budget_cap(item: BudgetCapAlert) -> str:
-    monthly_plan = item.monthly_plan if item.monthly_plan > 0 else item.weekly_plan * WEEKS_PER_MONTH
-    monthly_pace = item.budgets_sum * WEEKS_PER_MONTH
+    monthly_plan = item.monthly_plan if item.monthly_plan > 0 else item.weekly_plan * 4
     return "\n".join(
         [
             f"{_escape(item.client_name)} - специалист проекта ({_escape(item.directologist)})",
@@ -248,11 +255,11 @@ def format_budget_cap(item: BudgetCapAlert) -> str:
             _launched_campaigns_label(item.campaigns),
             "",
             (
-                f"Недельный открут - {_fmt_money(item.budgets_sum)} ₽ "
+                f"Недельный открут - {_fmt_spend(item.weekly_spend)} "
                 f"(запланировано: {_fmt_money(item.weekly_plan)} ₽)"
             ),
             (
-                f"Месячный открут - {_fmt_money(monthly_pace)} ₽ "
+                f"Месячный открут - {_fmt_spend(item.monthly_spend)} "
                 f"(запланировано: {_fmt_money(monthly_plan)} ₽)"
             ),
         ]
@@ -365,7 +372,7 @@ def collect_operator_alerts(
 
     balances = fetch_client_balances(settings.yandex_token, [client.yandex_login for client in clients])
     result.zero_balance, result.low_balance = split_balance_alerts(clients, balances)
-    result.budget_caps = _budget_cap_alerts(settings, clients)
+    result.budget_caps = _budget_cap_alerts(settings, clients, today)
 
     if is_weekly_alert_day(today):
         week_from, week_to = calendar_week_containing(yesterday)
@@ -404,8 +411,32 @@ def collect_operator_alert_messages(
     return format_operator_messages(collect_operator_alerts(db, settings, today))
 
 
-def _budget_cap_alerts(settings: Settings, clients: list[Client]) -> list[BudgetCapAlert]:
+def _current_week(today: date) -> tuple[date, date]:
+    monday = today - timedelta(days=today.weekday())
+    return monday, today
+
+
+def _current_month(today: date) -> tuple[date, date]:
+    return today.replace(day=1), today
+
+
+def _safe_period_spend(settings: Settings, client: Client, date_from: date, date_to: date) -> float | None:
+    try:
+        return _period_spend(settings, client, date_from, date_to)
+    except Exception:
+        return None
+
+
+def _period_spend(settings: Settings, client: Client, date_from: date, date_to: date) -> float:
+    rows = fetch_campaign_performance_rows_cached(settings, client, date_from, date_to)
+    raw = sum(_parse_float(row.get("Cost", "0")) for row in rows)
+    return cost_with_vat(raw, settings.vat_rate)
+
+
+def _budget_cap_alerts(settings: Settings, clients: list[Client], today: date) -> list[BudgetCapAlert]:
     ready = [client for client in clients if weekly_budget(float(client.monthly_budget or 0)) > 0]
+    week_from, week_to = _current_week(today)
+    month_from, month_to = _current_month(today)
 
     def _for_client(client: Client) -> list[BudgetCapAlert]:
         plan = weekly_budget(float(client.monthly_budget or 0))
@@ -419,6 +450,8 @@ def _budget_cap_alerts(settings: Settings, clients: list[Client]) -> list[Budget
         total, count = launched_weekly_budgets(campaigns, packages)
         if count <= 0 or total <= plan:
             return []
+        weekly_spend = _safe_period_spend(settings, client, week_from, week_to)
+        monthly_spend = _safe_period_spend(settings, client, month_from, month_to)
         return [
             BudgetCapAlert(
                 client_name=client.name,
@@ -427,6 +460,8 @@ def _budget_cap_alerts(settings: Settings, clients: list[Client]) -> list[Budget
                 weekly_plan=plan,
                 campaigns=count,
                 monthly_plan=float(client.monthly_budget or 0),
+                weekly_spend=weekly_spend,
+                monthly_spend=monthly_spend,
             )
         ]
 
