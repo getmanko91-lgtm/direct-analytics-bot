@@ -21,7 +21,6 @@ from src.services.message_delivery import (
     ReportDeliveryError,
     deliver_error_message,
     deliver_report_message,
-    deliver_telegram_message,
     effective_report_channel,
     resolve_max_bot_token,
     resolve_max_chat_id,
@@ -107,10 +106,7 @@ def run_daily_summary_report(db: Session, settings: Settings) -> None:
 
 
 def _deliver_plain_alert(db: Session, settings: Settings, message: str) -> None:
-    try:
-        deliver_telegram_message(db, settings, message)
-    except ReportDeliveryError:
-        deliver_report_message(db, settings, message)
+    deliver_report_message(db, settings, message)
 
 
 def _deliver_operator_alerts(db: Session, settings: Settings, today: date) -> None:
