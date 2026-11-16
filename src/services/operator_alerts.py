@@ -10,7 +10,7 @@ from src.db.models import Client
 from src.services.analytics_table import fetch_analytics_table_cached
 from src.services.client_balances import BALANCE_LOW_THRESHOLD, fetch_client_balances
 from src.services.campaign_types import _campaign_block, launched_weekly_budgets
-from src.services.cpa_style import weekly_budget
+from src.services.cpa_style import WEEKS_PER_MONTH, weekly_budget
 from src.services.direct_report_rows import fetch_campaign_performance_rows_cached
 from src.services.parallel_fetch import map_parallel
 from src.services.rsya_placements import _filter_zero_conversion_placements
@@ -60,6 +60,7 @@ class BudgetCapAlert:
     budgets_sum: float
     weekly_plan: float
     campaigns: int
+    monthly_plan: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -217,18 +218,49 @@ def format_weekly_overspend(alerts: list[WeeklyOverspend], date_from: date, date
     return "\n".join(lines).rstrip()
 
 
-def format_budget_caps(alerts: list[BudgetCapAlert]) -> str:
-    lines = _header("Бюджеты запущенных кампаний больше недельного открута")
-    lines.append("")
-    for item in alerts:
-        lines.append(_client_label(item))
-        lines.append(
-            f"сумма бюджетов {_fmt_money(item.budgets_sum)} ₽ "
-            f"при недельном откруте {_fmt_money(item.weekly_plan)} ₽ "
-            f"({item.campaigns} запущенных)"
-        )
-        lines.append("")
-    return "\n".join(lines).rstrip()
+def _launched_campaigns_label(count: int) -> str:
+    number = abs(int(count))
+    tail = number % 100
+    last = number % 10
+    if 11 <= tail <= 14:
+        words = "запущенных кампаний"
+    elif last == 1:
+        words = "запущенная кампания"
+    elif 2 <= last <= 4:
+        words = "запущенные кампании"
+    else:
+        words = "запущенных кампаний"
+    return f"({number} {words})"
+
+
+def format_budget_cap(item: BudgetCapAlert) -> str:
+    monthly_plan = item.monthly_plan if item.monthly_plan > 0 else item.weekly_plan * WEEKS_PER_MONTH
+    monthly_pace = item.budgets_sum * WEEKS_PER_MONTH
+    return "\n".join(
+        [
+            f"{_escape(item.client_name)} - специалист проекта ({_escape(item.directologist)})",
+            "",
+            (
+                f"сумма бюджетов {_fmt_money(item.budgets_sum)} ₽ "
+                f"при недельном откруте {_fmt_money(item.weekly_plan)} ₽"
+            ),
+            "",
+            _launched_campaigns_label(item.campaigns),
+            "",
+            (
+                f"Недельный открут - {_fmt_money(item.budgets_sum)} ₽ "
+                f"(запланировано: {_fmt_money(item.weekly_plan)} ₽)"
+            ),
+            (
+                f"Месячный открут - {_fmt_money(monthly_pace)} ₽ "
+                f"(запланировано: {_fmt_money(monthly_plan)} ₽)"
+            ),
+        ]
+    )
+
+
+def format_budget_caps(alerts: list[BudgetCapAlert]) -> list[str]:
+    return [format_budget_cap(item) for item in alerts]
 
 
 def format_dead_campaigns(alerts: list[CampaignAlert], date_from: date, date_to: date) -> str:
@@ -297,7 +329,7 @@ def format_operator_messages(alerts: OperatorAlerts) -> list[str]:
     if alerts.weekly_overspend and alerts.week_from and alerts.week_to:
         messages.append(format_weekly_overspend(alerts.weekly_overspend, alerts.week_from, alerts.week_to))
     if alerts.budget_caps:
-        messages.append(format_budget_caps(alerts.budget_caps))
+        messages.extend(format_budget_caps(alerts.budget_caps))
     if alerts.dead_campaigns and alerts.bidaily_from and alerts.bidaily_to:
         messages.append(format_dead_campaigns(alerts.dead_campaigns, alerts.bidaily_from, alerts.bidaily_to))
     if alerts.rsya_waste and alerts.week_from and alerts.week_to:
@@ -394,6 +426,7 @@ def _budget_cap_alerts(settings: Settings, clients: list[Client]) -> list[Budget
                 budgets_sum=total,
                 weekly_plan=plan,
                 campaigns=count,
+                monthly_plan=float(client.monthly_budget or 0),
             )
         ]
 

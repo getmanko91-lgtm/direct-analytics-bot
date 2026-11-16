@@ -148,16 +148,22 @@ def test_operator_messages_are_plain_chat_text():
 
 def test_budget_cap_warning_when_launched_budgets_exceed_weekly_plan():
     alerts = [
-        BudgetCapAlert("СушиСЕЛЛ г. Кингисепп", "Лариса", 18000, 12500, 3),
+        BudgetCapAlert("СушиСЕЛЛ г. Кингисепп", "Лариса", 18000, 12500, 3, 50000),
+        BudgetCapAlert("СушиСЕЛЛ г. Гатчина", "Ксюша", 12000, 5000, 1, 20000),
     ]
-    text = format_budget_caps(alerts)
-    assert "Операторам" in text
-    assert "Бюджеты запущенных кампаний больше недельного открута" in text
-    assert "Лариса · СушиСЕЛЛ г. Кингисепп" in text
-    assert "18 000,00 ₽" in text
-    assert "12 500,00 ₽" in text
-    assert "3 запущенных" in text
-    messages = format_operator_messages(
-        OperatorAlerts(budget_caps=alerts)
+    messages = format_budget_caps(alerts)
+    assert len(messages) == 2
+    text = messages[0]
+    assert text == (
+        "СушиСЕЛЛ г. Кингисепп - специалист проекта (Лариса)\n"
+        "\n"
+        "сумма бюджетов 18 000,00 ₽ при недельном откруте 12 500,00 ₽\n"
+        "\n"
+        "(3 запущенные кампании)\n"
+        "\n"
+        "Недельный открут - 18 000,00 ₽ (запланировано: 12 500,00 ₽)\n"
+        "Месячный открут - 72 000,00 ₽ (запланировано: 50 000,00 ₽)"
     )
-    assert messages == [text]
+    assert messages[1].splitlines()[0] == "СушиСЕЛЛ г. Гатчина - специалист проекта (Ксюша)"
+    assert "(1 запущенная кампания)" in messages[1]
+    assert format_operator_messages(OperatorAlerts(budget_caps=alerts)) == messages
